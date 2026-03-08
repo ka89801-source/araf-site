@@ -29,7 +29,18 @@ site:youtube.com)
     })
   });
 
-  const data = await response.json();
+  const raw = await response.text();
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`فشل في قراءة استجابة Serper: ${raw}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.message || "خطأ في Serper");
+  }
 
   if (!Array.isArray(data.organic)) return [];
 
@@ -65,7 +76,7 @@ async function extractText(url) {
 
     const text = $("body").text();
     return (text || "").replace(/\s+/g, " ").slice(0, 6000);
-  } catch (e) {
+  } catch {
     return "";
   }
 }
@@ -95,13 +106,42 @@ function extractOpenAIText(data) {
   return parts.join("\n").trim();
 }
 
+function extractLinksFromHtml(content) {
+  const links = [];
+  const regex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    links.push({
+      title: (match[2] || "مصدر").replace(/<[^>]*>/g, "").trim(),
+      url: (match[1] || "").trim()
+    });
+  }
+
+  const seen = new Set();
+  return links.filter((item) => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
+  }
+
+  // تشخيص سريع عند فتح /api/ask مباشرة في المتصفح
+  if (req.method === "GET") {
+    return res.status(200).json({
+      ok: true,
+      hasOpenAI: !!process.env.OPENAI_API_KEY,
+      hasSerper: !!process.env.SERPER_API_KEY
+    });
   }
 
   if (req.method !== "POST") {
@@ -234,27 +274,11 @@ ${sourcesText}
 
     content = content.replace(/```html/gi, "").replace(/```/g, "").trim();
 
-    const links = [];
-    const regex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-      links.push({
-        title: (match[2] || "مصدر").replace(/<[^>]*>/g, "").trim(),
-        url: (match[1] || "").trim()
-      });
-    }
-
-    const seen = new Set();
-    const uniqueSources = links.filter((item) => {
-      if (!item.url || seen.has(item.url)) return false;
-      seen.add(item.url);
-      return true;
-    });
+    const extractedLinks = extractLinksFromHtml(content);
 
     return res.status(200).json({
       content,
-      sources: uniqueSources.length ? uniqueSources : searchResults,
+      sources: extractedLinks.length ? extractedLinks : searchResults,
       type: "إجابة قانونية موثقة"
     });
   } catch (error) {
@@ -263,4 +287,3 @@ ${sourcesText}
     });
   }
 }
- 
