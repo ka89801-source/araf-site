@@ -287,3 +287,4 @@ ${sourcesText}
     });
   }
 }
+// redeploy trigger
