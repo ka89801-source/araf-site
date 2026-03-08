@@ -3,13 +3,17 @@ import pdf from "pdf-parse";
 
 async function searchSerper(query) {
   const domainFilter = `
-  site:boe.gov.sa OR
-  site:laws.boe.gov.sa OR
-  site:moj.gov.sa OR
-  site:hrsd.gov.sa OR
-  site:gosi.gov.sa OR
-  site:*.edu.sa
-  `;
+(site:boe.gov.sa OR
+site:laws.boe.gov.sa OR
+site:moj.gov.sa OR
+site:hrsd.gov.sa OR
+site:gosi.gov.sa OR
+site:*.edu.sa OR
+site:x.com OR
+site:twitter.com OR
+site:linkedin.com OR
+site:youtube.com)
+`;
 
   const finalQuery = `${query} ${domainFilter}`;
 
@@ -27,18 +31,19 @@ async function searchSerper(query) {
 
   const data = await response.json();
 
-  if (!data.organic) return [];
+  if (!Array.isArray(data.organic)) return [];
 
-  return data.organic.map(r => ({
-    title: r.title,
-    url: r.link,
-    snippet: r.snippet || ""
-  }));
+  return data.organic
+    .map((r) => ({
+      title: r.title || "مصدر",
+      url: r.link || "",
+      snippet: r.snippet || ""
+    }))
+    .filter((r) => r.url);
 }
 
 async function extractText(url) {
   try {
-
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0"
@@ -48,30 +53,56 @@ async function extractText(url) {
     const buffer = await response.arrayBuffer();
     const contentType = response.headers.get("content-type") || "";
 
-    if (contentType.includes("pdf")) {
+    if (contentType.includes("pdf") || url.toLowerCase().endsWith(".pdf")) {
       const parsed = await pdf(Buffer.from(buffer));
-      return parsed.text.slice(0, 6000);
+      return (parsed.text || "").replace(/\s+/g, " ").slice(0, 6000);
     }
 
     const html = Buffer.from(buffer).toString("utf8");
     const $ = cheerio.load(html);
 
-    $("script, style, nav, footer, header").remove();
+    $("script, style, nav, footer, header, noscript, iframe").remove();
 
     const text = $("body").text();
-
-    return text.replace(/\s+/g, " ").slice(0, 6000);
-
+    return (text || "").replace(/\s+/g, " ").slice(0, 6000);
   } catch (e) {
     return "";
   }
 }
 
-export default async function handler(req, res) {
+function extractOpenAIText(data) {
+  if (typeof data.output_text === "string" && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
 
+  const parts = [];
+
+  if (Array.isArray(data.output)) {
+    for (const item of data.output) {
+      if (item.type === "message" && Array.isArray(item.content)) {
+        for (const part of item.content) {
+          if (part.type === "output_text" && typeof part.text === "string") {
+            parts.push(part.text);
+          }
+          if (part.type === "text" && typeof part.text === "string") {
+            parts.push(part.text);
+          }
+        }
+      }
+    }
+  }
+
+  return parts.join("\n").trim();
+}
+
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -79,15 +110,34 @@ export default async function handler(req, res) {
 
   const { query } = req.body || {};
 
-  if (!query) {
+  if (!query || !query.trim()) {
     return res.status(400).json({
       error: "يرجى إدخال السؤال"
     });
   }
 
-  try {
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      error: "OPENAI_API_KEY غير موجود في Vercel"
+    });
+  }
 
+  if (!process.env.SERPER_API_KEY) {
+    return res.status(500).json({
+      error: "SERPER_API_KEY غير موجود في Vercel"
+    });
+  }
+
+  try {
     const searchResults = await searchSerper(query);
+
+    if (!searchResults.length) {
+      return res.status(200).json({
+        content: "<p>تعذر العثور على نتائج بحث كافية في المصادر المحددة.</p>",
+        sources: [],
+        type: "إجابة قانونية"
+      });
+    }
 
     let sourcesText = "";
 
@@ -95,10 +145,11 @@ export default async function handler(req, res) {
       const pageText = await extractText(r.url);
 
       sourcesText += `
-المصدر: ${r.title}
+العنوان: ${r.title}
 الرابط: ${r.url}
-النص:
-${pageText}
+الملخص: ${r.snippet}
+النص المستخرج:
+${pageText || "لم يمكن استخراج نص كافٍ من هذا المصدر."}
 
 -----------------------
 `;
@@ -108,45 +159,107 @@ ${pageText}
 السؤال:
 ${query}
 
-المصادر:
+المصادر التي تم جمعها:
 ${sourcesText}
 
-اكتب دراسة قانونية قصيرة باللغة العربية اعتمادًا على المصادر أعلاه.
+أنت باحث قانوني سعودي محترف يعمل لصالح شركة أعراف للمحاماة والاستشارات القانونية.
 
 التعليمات:
-- قدم النصوص النظامية أولًا.
-- اعتمد الأحدث فالأحدث.
-- بعد كل فقرة ضع مصدرها كرابط.
-- استخدم صيغة HTML.
+- أجب بالعربية فقط.
+- اعتمد أولًا على المصادر الرسمية السعودية، ثم المقالات القانونية السعودية، ثم الشروح والأبحاث، ثم منشورات المحامين.
+- اعتمد الأحدث فالأحدث متى أمكن.
+- قدم النص النظامي الرسمي على غيره دائمًا.
+- اكتب الإجابة بصيغة HTML.
+- اجعل الجواب بهذا الترتيب:
+<h2>عنوان الموضوع</h2>
+<h3>الأساس النظامي</h3>
+<p>...</p>
+<h3>التحليل القانوني</h3>
+<ul><li>...</li></ul>
+<h3>الخلاصة</h3>
+<p>...</p>
+<h3>المراجع</h3>
+<ul><li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a></li></ul>
+- يفضل وضع مصدر بعد كل فقرة أو نقطة متى أمكن.
+- إذا كانت النتائج كافية فأجب، ولا تكتفِ بعبارة "لم يتم العثور على نتيجة".
 `;
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
         model: "gpt-4.1",
         input: prompt,
-        max_output_tokens: 2000
+        max_output_tokens: 2500
       })
     });
 
-    const data = await response.json();
+    const raw = await response.text();
 
-    const content = data.output_text || "لم يتم العثور على نتيجة.";
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return res.status(500).json({
+        error: raw || "فشل في قراءة استجابة OpenAI"
+      });
+    }
+
+    if (!response.ok) {
+      return res.status(500).json({
+        error: data?.error?.message || "خطأ في OpenAI"
+      });
+    }
+
+    let content = extractOpenAIText(data);
+
+    if (!content) {
+      content = `
+        <h2>تعذر استخراج جواب من النموذج</h2>
+        <p>تم العثور على نتائج بحث ومصادر، لكن لم يُستخرج نص الجواب من استجابة OpenAI بالشكل المتوقع.</p>
+        <h3>المراجع</h3>
+        <ul>
+          ${searchResults
+            .map(
+              (r) =>
+                `<li><a href="${r.url}" target="_blank" rel="noopener noreferrer">${r.title}</a></li>`
+            )
+            .join("")}
+        </ul>
+      `;
+    }
+
+    content = content.replace(/```html/gi, "").replace(/```/g, "").trim();
+
+    const links = [];
+    const regex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+    let match;
+
+    while ((match = regex.exec(content)) !== null) {
+      links.push({
+        title: (match[2] || "مصدر").replace(/<[^>]*>/g, "").trim(),
+        url: (match[1] || "").trim()
+      });
+    }
+
+    const seen = new Set();
+    const uniqueSources = links.filter((item) => {
+      if (!item.url || seen.has(item.url)) return false;
+      seen.add(item.url);
+      return true;
+    });
 
     return res.status(200).json({
       content,
-      sources: searchResults
+      sources: uniqueSources.length ? uniqueSources : searchResults,
+      type: "إجابة قانونية موثقة"
     });
-
   } catch (error) {
-
     return res.status(500).json({
-      error: error.message
+      error: error.message || "حدث خطأ غير متوقع"
     });
-
   }
 }
