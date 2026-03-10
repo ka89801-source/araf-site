@@ -6,66 +6,31 @@ const MAX_RESULTS_PER_SEARCH = 8;
 const MAX_SOURCES = 25;
 const MAX_CHARS_PER_SOURCE = 5000;
 
-/* ====== فلترة المصادر القانونية السعودية – الطبقة الرسمية ====== */
-const OFFICIAL_DOMAIN_FILTER = `
-(site:boe.gov.sa OR
-site:laws.boe.gov.sa OR
-site:moj.gov.sa OR
-site:hrsd.gov.sa OR
-site:mc.gov.sa OR
-site:gosi.gov.sa OR
-site:edu.sa)
-`;
+/* ====== فلترة المصادر — رسمية ====== */
+const OFFICIAL_DOMAINS = `(site:boe.gov.sa OR site:laws.boe.gov.sa OR site:moj.gov.sa OR site:hrsd.gov.sa OR site:mc.gov.sa OR site:gosi.gov.sa OR site:bog.gov.sa OR site:cma.org.sa OR site:edu.sa)`;
 
-/* ====== فلترة تويتر (X) للمحتوى القانوني السعودي ====== */
-const TWITTER_DOMAIN_FILTER = `(site:x.com OR site:twitter.com)`;
+/* ====== فلترة المصادر — تويتر ====== */
+const TWITTER_DOMAINS = `(site:x.com OR site:twitter.com)`;
 
-/* ====== فلترة لينكدإن للمحتوى القانوني المهني ====== */
-const LINKEDIN_DOMAIN_FILTER = `(site:linkedin.com)`;
-
-/* ====== تصنيف المصادر حسب الأولوية ====== */
-function classifySource(url) {
-  const u = (url || "").toLowerCase();
-
-  if (
-    u.includes("boe.gov.sa") ||
-    u.includes("laws.boe.gov.sa") ||
-    u.includes("moj.gov.sa") ||
-    u.includes("hrsd.gov.sa") ||
-    u.includes("mc.gov.sa") ||
-    u.includes("gosi.gov.sa")
-  ) {
-    return { tier: 1, label: "مصدر رسمي حكومي" };
-  }
-
-  if (u.includes("x.com") || u.includes("twitter.com")) {
-    return { tier: 2, label: "تعليق مهني – تويتر (X)" };
-  }
-  if (u.includes("linkedin.com")) {
-    return { tier: 2, label: "تعليق مهني – لينكدإن" };
-  }
-
-  if (u.includes(".edu.sa") || u.includes(".edu/")) {
-    return { tier: 3, label: "مصدر أكاديمي" };
-  }
-
-  return { tier: 4, label: "مصدر داعم" };
-}
+/* ====== فلترة المصادر — لينكد إن ====== */
+const LINKEDIN_DOMAINS = `(site:linkedin.com)`;
 
 /* ====== تنفيذ بحث عبر Serper ====== */
 async function serperSearch(query, domainFilter) {
-  const finalQuery = `${query} ${domainFilter}`;
+  const finalQuery = domainFilter ? `${query} ${domainFilter}` : query;
 
   const resp = await fetch("https://google.serper.dev/search", {
     method: "POST",
     headers: {
       "X-API-KEY": process.env.SERPER_API_KEY,
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     },
     body: JSON.stringify({
       q: finalQuery,
       num: MAX_RESULTS_PER_SEARCH,
-    }),
+      gl: "sa",
+      hl: "ar"
+    })
   });
 
   const raw = await resp.text();
@@ -88,15 +53,28 @@ async function serperSearch(query, domainFilter) {
       title: r.title || "مصدر",
       url: r.link || "",
       snippet: r.snippet || "",
+      date: r.date || ""
     }))
     .filter((r) => r.url);
+}
+
+/* ====== تحديد نوع المصدر تلقائياً ====== */
+function detectSourceType(url) {
+  const u = url.toLowerCase();
+  if (u.includes("x.com") || u.includes("twitter.com")) return "تويتر";
+  if (u.includes("linkedin.com")) return "لينكد إن";
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "فيديو";
+  if (u.includes("tiktok.com")) return "فيديو";
+  if (u.includes(".gov.sa") || u.includes(".edu.sa")) return "رسمي";
+  return "مقالة";
 }
 
 /* ====== استخراج النص من صفحة أو PDF ====== */
 async function extractText(url) {
   try {
     const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(10000)
     });
 
     const buf = await resp.arrayBuffer();
@@ -109,17 +87,14 @@ async function extractText(url) {
 
     const html = Buffer.from(buf).toString("utf8");
     const $ = cheerio.load(html);
-
     $("script, style, nav, footer, header, noscript, iframe").remove();
-    const text = $("body").text();
-
-    return (text || "").replace(/\s+/g, " ").slice(0, MAX_CHARS_PER_SOURCE);
+    return ($("body").text() || "").replace(/\s+/g, " ").slice(0, MAX_CHARS_PER_SOURCE);
   } catch {
     return "";
   }
 }
 
-/* ====== استخراج نص رد OpenAI (Responses API) ====== */
+/* ====== استخراج نص رد OpenAI ====== */
 function extractOpenAIText(data) {
   if (typeof data.output_text === "string" && data.output_text.trim()) {
     return data.output_text.trim();
@@ -130,17 +105,13 @@ function extractOpenAIText(data) {
     for (const item of data.output) {
       if (item.type === "message" && Array.isArray(item.content)) {
         for (const part of item.content) {
-          if (
-            (part.type === "output_text" || part.type === "text") &&
-            part.text
-          ) {
+          if ((part.type === "output_text" || part.type === "text") && part.text) {
             parts.push(part.text);
           }
         }
       }
     }
   }
-
   return parts.join("\n").trim();
 }
 
@@ -148,131 +119,12 @@ function extractOpenAIText(data) {
 function dedupeSources(arr) {
   const seen = new Set();
   const out = [];
-
   for (const r of arr) {
     if (!r.url || seen.has(r.url)) continue;
     seen.add(r.url);
     out.push(r);
   }
-
   return out;
-}
-
-/* ====== بناء نص المصادر المصنّفة للبرومبت ====== */
-function buildSourcesText(allResults) {
-  const sorted = [...allResults].sort((a, b) => {
-    const tierA = classifySource(a.url).tier;
-    const tierB = classifySource(b.url).tier;
-    return tierA - tierB;
-  });
-
-  let text = "";
-  for (const r of sorted) {
-    const cls = classifySource(r.url);
-    text += `
-[${cls.label} – المستوى ${cls.tier}]
-العنوان: ${r.title}
-الرابط: ${r.url}
-الملخص: ${r.snippet}
-النص:
-${r.extractedText || "لم يمكن استخراج نص كافٍ."}
-
----------------------
-`;
-  }
-  return text;
-}
-
-/* ====== بناء البرومبت الرئيسي مع التحليل المتقاطع ====== */
-function buildAnalysisPrompt(query, sourcesText) {
-  return `
-السؤال الأصلي من المستخدم:
-${query}
-
-المصادر القانونية المجمّعة (مرتبة حسب الأولوية):
-${sourcesText}
-
-أنت محلل قانوني سعودي متخصص ذو خبرة عالية في الأنظمة السعودية.
-
-═══════════════════════════════════════
-المرحلة الأولى: فحص السؤال وتصحيح التأطير القانوني
-═══════════════════════════════════════
-قبل الإجابة، افحص السؤال بدقة:
-1. هل يحتوي السؤال على مفهوم خاطئ أو تأطير قانوني غير صحيح؟
-2. هل يخلط بين أنظمة مختلفة أو يفترض حكمًا غير موجود؟
-3. هل يستخدم مصطلحات قانونية بشكل غير دقيق؟
-
-إذا وجدت خطأ في التأطير القانوني:
-- اشرح الخطأ بوضوح تحت عنوان <h3>تصحيح مهم</h3>
-- صحح الإطار القانوني
-- أعد صياغة السؤال بشكله الصحيح
-- ثم أجب على السؤال المصحح
-
-إذا لم يكن هناك خطأ، تجاوز هذه المرحلة وأجب مباشرة.
-
-═══════════════════════════════════════
-المرحلة الثانية: التحليل المتقاطع للمصادر
-═══════════════════════════════════════
-1. قارن بين جميع المصادر المتاحة.
-2. إذا وجدت تعارضًا بين المصادر:
-   - وضّح التعارض تحت عنوان <h3>ملاحظة حول تعارض المصادر</h3>
-   - بيّن أي المصادر أكثر موثوقية ولماذا.
-   - المصادر الرسمية الحكومية تتقدم دائمًا على غيرها.
-3. إذا تعارض تعليق مهني (تويتر/لينكدإن) مع نص نظامي رسمي، فالنص الرسمي هو المرجع.
-
-═══════════════════════════════════════
-المرحلة الثالثة: تسلسل أولوية المصادر
-═══════════════════════════════════════
-اعتمد على المصادر بالترتيب التالي:
-1. النصوص النظامية الرسمية والمصادر الحكومية (المستوى 1)
-2. التعليقات المهنية من محامين ومستشارين سعوديين على تويتر ولينكدإن (المستوى 2)
-3. المقالات والأبحاث القانونية الأكاديمية (المستوى 3)
-4. المصادر الداعمة الأخرى (المستوى 4)
-
-═══════════════════════════════════════
-المرحلة الرابعة: كتابة الإجابة
-═══════════════════════════════════════
-- اكتب الإجابة بالعربية بصيغة HTML.
-- اعتمد الأحدث فالأحدث عند التعارض الزمني.
-- ضع مصدرًا بعد كل فقرة إن أمكن.
-
-استخدم الهيكل التالي:
-
-<h2>عنوان الموضوع</h2>
-
-<!-- إذا وُجد خطأ في التأطير القانوني -->
-<h3>تصحيح مهم</h3>
-<p>...</p>
-
-<h3>الأساس النظامي</h3>
-<p>...</p>
-
-<h3>التحليل القانوني</h3>
-<ul>
-<li>...</li>
-</ul>
-
-<!-- إذا وُجد تعارض بين المصادر -->
-<h3>ملاحظة حول تعارض المصادر</h3>
-<p>...</p>
-
-<!-- إذا وُجدت آراء مهنية مفيدة من تويتر أو لينكدإن -->
-<h3>آراء المختصين</h3>
-<p>...</p>
-
-<h3>الخلاصة</h3>
-<p>...</p>
-
-<h3>المراجع</h3>
-<ul>
-<li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a> – [نوع المصدر]</li>
-</ul>
-
-تعليمات إضافية:
-- لا تختلق معلومات غير موجودة في المصادر.
-- إذا لم تجد إجابة كافية في المصادر، صرّح بذلك بوضوح.
-- عند ذكر مادة نظامية، حدد رقم المادة واسم النظام بدقة من المصدر.
-`;
 }
 
 /* ====== الخادم ====== */
@@ -281,135 +133,105 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { query } = req.body || {};
-
-  if (!query || !query.trim()) {
-    return res.status(400).json({ error: "يرجى إدخال السؤال" });
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "OPENAI_API_KEY غير موجود" });
-  }
-
-  if (!process.env.SERPER_API_KEY) {
-    return res.status(500).json({ error: "SERPER_API_KEY غير موجود" });
-  }
+  if (!query || !query.trim()) return res.status(400).json({ error: "يرجى إدخال السؤال" });
+  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY غير موجود" });
+  if (!process.env.SERPER_API_KEY) return res.status(500).json({ error: "SERPER_API_KEY غير موجود" });
 
   try {
-    /* ─── طبقة 1: البحث في المصادر الرسمية ─── */
-    const officialSearch1 = `${query} نص النظام السعودي مادة`;
-    const officialSearch2 = `${query} شرح قانوني`;
-    const officialSearch3 = `${query} دراسة قانونية`;
+    /* ====== المرحلة الأولى: البحث الشامل بالتوازي ====== */
 
-    /* ─── طبقة 2: البحث في تويتر (X) ─── */
-    const twitterSearch = `${query} محامي سعودي نظام عمل قانون`;
-
-    /* ─── طبقة 3: البحث في لينكدإن ─── */
-    const linkedinSearch = `${query} محامي مستشار قانوني موارد بشرية سعودي`;
-
-    /* ─── تنفيذ جميع عمليات البحث بالتوازي ─── */
-    const [
-      officialResults1,
-      officialResults2,
-      officialResults3,
-      twitterResults,
-      linkedinResults,
-    ] = await Promise.all([
-      serperSearch(officialSearch1, OFFICIAL_DOMAIN_FILTER),
-      serperSearch(officialSearch2, OFFICIAL_DOMAIN_FILTER),
-      serperSearch(officialSearch3, OFFICIAL_DOMAIN_FILTER),
-      serperSearch(twitterSearch, TWITTER_DOMAIN_FILTER),
-      serperSearch(linkedinSearch, LINKEDIN_DOMAIN_FILTER),
+    const [r1, r2, r3, r4, r5, r6, r7] = await Promise.all([
+      // 1. الأنظمة الرسمية
+      serperSearch(`${query} نص النظام السعودي مادة 2025`, OFFICIAL_DOMAINS),
+      serperSearch(`${query} لائحة تنفيذية تعديل`, OFFICIAL_DOMAINS),
+      // 2. تويتر — محامين ومختصين
+      serperSearch(`${query} محامي نظام العمل`, TWITTER_DOMAINS),
+      serperSearch(`${query} موارد بشرية تحديث 2025`, TWITTER_DOMAINS),
+      // 3. لينكد إن — محامين ومختصين
+      serperSearch(`${query} محامي قانوني سعودي`, LINKEDIN_DOMAINS),
+      // 4. مقالات قانونية
+      serperSearch(`${query} شرح قانوني تحليل`, ""),
+      // 5. بحث عام
+      serperSearch(`${query} دراسة قانونية سعودية`, "")
     ]);
 
-    /* ─── دمج وإزالة التكرار ─── */
-    let allResults = [
-      ...officialResults1,
-      ...officialResults2,
-      ...officialResults3,
-      ...twitterResults,
-      ...linkedinResults,
-    ];
+    let allResults = [...r1, ...r2, ...r3, ...r4, ...r5, ...r6, ...r7];
     allResults = dedupeSources(allResults).slice(0, MAX_SOURCES);
+
+    // إضافة نوع المصدر
+    for (const r of allResults) {
+      r.type = detectSourceType(r.url);
+    }
 
     if (!allResults.length) {
       return res.status(200).json({
-        content:
-          "<p>تعذر العثور على نتائج كافية في المصادر القانونية المحددة.</p>",
+        content: "<p>تعذر العثور على نتائج كافية في المصادر القانونية.</p>",
         sources: [],
-        type: "إجابة قانونية",
+        type: "إجابة قانونية"
       });
     }
 
-    /* ─── استخراج النصوص بالتوازي ─── */
-    const extractionPromises = allResults.map(async (r) => {
-      const text = await extractText(r.url);
-      return { ...r, extractedText: text };
-    });
-    allResults = await Promise.all(extractionPromises);
+    /* ====== استخراج النصوص ====== */
+    let sourcesText = "";
+    for (const r of allResults) {
+      const pageText = await extractText(r.url);
+      sourcesText += `\n[${r.type}] العنوان: ${r.title}\nالرابط: ${r.url}\n${r.date ? `التاريخ: ${r.date}` : ""}\nالملخص: ${r.snippet}\nالنص:\n${pageText || "لم يمكن استخراج نص."}\n-----\n`;
+    }
 
-    /* ─── بناء نص المصادر المصنّفة ─── */
-    const sourcesText = buildSourcesText(allResults);
+    /* ====== البرومبت الشامل ====== */
+    const prompt = `السؤال من المستخدم:\n${query}\n\nالمصادر القانونية المجمّعة:\n${sourcesText}\n\nأنت باحث قانوني سعودي متخصص تعمل لشركة أعراف للمحاماة. مهمتك التحقق من صحة التوصيف القانوني للسؤال ثم الإجابة.\n\n## أولاً: كشف الأخطاء التوصيفية (إلزامي)\n\nقارن جميع المصادر وافحص السؤال:\n1. قارن مصطلحات السائل مع المصطلحات الصحيحة في النظام الحالي بعد آخر التعديلات\n2. تحقق هل المفهوم القانوني لا يزال بنفس التوصيف أم تغيّر\n3. قارن ما يقوله المختصون في تويتر ولينكد إن مع النص الرسمي\n4. ابحث عن تعديلات حديثة غيّرت المفاهيم\n\nأمثلة:\n- "استقالة" في عقد محدد المدة → الصحيح "إشعار إنهاء عقد"\n- الخلط بين المادة 85 و84 بسبب تغيّر التوصيف\n\nعند اكتشاف خطأ: ابدأ بـ <h3>⚠️ تصحيح التوصيف القانوني</h3> ووضّح الخطأ مع مصادره\nعند عدم وجود خطأ: أجب مباشرة\n\n## ثانياً: الإجابة الموثّقة\n\n- اعتمد الأنظمة الرسمية أولاً ثم تويتر ولينكد إن ثم المقالات\n- اعتمد الأحدث فالأحدث\n- عند تعارض المصادر اذكره صراحة\n\n## التوثيق الإلزامي:\n- يُمنع ذكر أي معلومة بدون رابط مصدرها بعدها مباشرة\n- حتى لو سطر أو كلمة — الرابط بعدها\n- التنسيق: <a href="الرابط" target="_blank" class="src-link">اسم المصدر</a>\n- بدون مصدر = لا تذكرها\n\n## لا مقدمة تمهيدية\n\n## تنسيق HTML:\n<h2>عنوان</h2>\n<h3>⚠️ تصحيح التوصيف القانوني</h3> (إن وُجد خطأ)\n<h3>الأساس النظامي</h3>\n<h3>آراء المختصين</h3> (تغريدات ومنشورات مع روابطها)\n<h3>التحليل القانوني</h3>\n<h3>الخلاصة</h3>\n\nالحد: 8000 كلمة. العربية فقط.\n\nفي النهاية:\n|||SOURCES|||\n[{"title":"العنوان","url":"الرابط","type":"رسمي/مقالة/تويتر/لينكد إن/فيديو","date":"التاريخ"}]`;
 
-    /* ─── بناء البرومبت مع التحليل المتقاطع ─── */
-    const prompt = buildAnalysisPrompt(query, sourcesText);
-
-    /* ─── استدعاء OpenAI – موديل gpt-5.2 ─── */
     const openaiResp = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-5.2",
+        model: "gpt-4.1",
         input: prompt,
-        max_output_tokens: 4000,
-      }),
+        max_output_tokens: 4000
+      })
     });
 
     const raw = await openaiResp.text();
-
     let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      return res.status(500).json({ error: raw });
+    try { data = JSON.parse(raw); } catch { return res.status(500).json({ error: raw }); }
+    if (!openaiResp.ok) return res.status(500).json({ error: data?.error?.message || "خطأ في OpenAI" });
+
+    let content = extractOpenAIText(data) || "<p>لم يتم استخراج جواب.</p>";
+
+    /* ====== استخراج المصادر ====== */
+    let sources = allResults.map((r) => ({ title: r.title, url: r.url, type: r.type, date: r.date || "" }));
+
+    const idx = content.indexOf("|||SOURCES|||");
+    if (idx > -1) {
+      const mainContent = content.substring(0, idx).trim();
+      const rest = content.substring(idx + 13);
+      const match = rest.match(/\[[\s\S]*\]/);
+      if (match) {
+        try {
+          const ps = JSON.parse(match[0]);
+          if (Array.isArray(ps) && ps.length) sources = ps;
+        } catch { /* fallback */ }
+      }
+      content = mainContent;
     }
 
-    if (!openaiResp.ok) {
-      return res.status(500).json({
-        error: data?.error?.message || "خطأ في OpenAI",
-      });
-    }
+    /* ====== تحديد النوع ====== */
+    const plain = content.replace(/<[^>]*>/g, "");
+    const wc = plain.split(/\s+/).filter((w) => w).length;
+    let type = "دراسة قانونية موثقة";
+    if (wc < 300) type = "إجابة قانونية موثقة";
+    else if (wc < 800) type = "مقالة قانونية موثقة";
 
-    const content =
-      extractOpenAIText(data) || "<p>لم يتم استخراج جواب.</p>";
+    return res.status(200).json({ content, sources, type });
 
-    /* ─── إرجاع النتيجة مع تصنيف المصادر ─── */
-    const classifiedSources = allResults.map((r) => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.snippet,
-      ...classifySource(r.url),
-    }));
-
-    return res.status(200).json({
-      content,
-      sources: classifiedSources,
-      type: "إجابة قانونية",
-    });
   } catch (error) {
-    return res.status(500).json({
-      error: error.message || "خطأ غير متوقع",
-    });
+    return res.status(500).json({ error: error.message || "خطأ غير متوقع" });
   }
 }
