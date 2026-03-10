@@ -2,9 +2,9 @@ import * as cheerio from "cheerio";
 import pdf from "pdf-parse";
 
 /* ====== إعدادات ====== */
-const MAX_RESULTS_PER_SEARCH = 8;
-const MAX_SOURCES = 25;
-const MAX_CHARS_PER_SOURCE = 5000;
+const MAX_RESULTS_PER_SEARCH = 5;
+const MAX_SOURCES = 12;
+const MAX_CHARS_PER_SOURCE = 1500;
 
 /* ====== فلترة المصادر — رسمية ====== */
 const OFFICIAL_DOMAINS = `(site:boe.gov.sa OR site:laws.boe.gov.sa OR site:moj.gov.sa OR site:hrsd.gov.sa OR site:mc.gov.sa OR site:gosi.gov.sa OR site:bog.gov.sa OR site:cma.org.sa OR site:edu.sa)`;
