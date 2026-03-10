@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import pdf from "pdf-parse";
+import { applyLegalRules } from "../lib/legalRules.js";
 
 /* ====== إعدادات ====== */
 const MAX_RESULTS_PER_SEARCH = 8;
@@ -22,13 +23,15 @@ site:twitter.com OR
 site:tiktok.com)
 `;
 
-/* ====== أوزان المصادر ======
-1) رسمي
-2) أكاديمي
-3) مقالات/محتوى مهني
-4) تويتر/إكس
-5) تيك توك / بقية الاجتماعي
-*/
+/* ====== تصنيف المصادر ====== */
+function getHostname(url = "") {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function getSourceCategory(url = "") {
   const host = getHostname(url);
 
@@ -67,6 +70,23 @@ function getSourceCategory(url = "") {
   return "other";
 }
 
+function classifySourceLabel(url = "") {
+  switch (getSourceCategory(url)) {
+    case "official":
+      return "رسمي";
+    case "academic":
+      return "أكاديمي";
+    case "professional_article":
+      return "مهني / مقالي";
+    case "twitter":
+      return "إكس / تويتر";
+    case "tiktok":
+      return "تيك توك";
+    default:
+      return "مصدر قانوني";
+  }
+}
+
 function getBaseSourceWeight(url = "") {
   const category = getSourceCategory(url);
 
@@ -87,14 +107,6 @@ function getBaseSourceWeight(url = "") {
 }
 
 /* ====== أدوات مساعدة ====== */
-function getHostname(url = "") {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return "";
-  }
-}
-
 function cleanText(text = "") {
   return text
     .replace(/\u00a0/g, " ")
@@ -113,11 +125,7 @@ function escapeHtml(text = "") {
     .replace(/>/g, "&gt;");
 }
 
-function unique(arr = []) {
-  return [...new Set(arr.filter(Boolean))];
-}
-
-function dedupeSources(arr) {
+function dedupeSources(arr = []) {
   const seen = new Set();
   const out = [];
 
@@ -125,6 +133,7 @@ function dedupeSources(arr) {
     if (!r.url) continue;
 
     let normalized = r.url.trim();
+
     try {
       const u = new URL(normalized);
       u.hash = "";
@@ -148,6 +157,7 @@ function dedupeSources(arr) {
 function buildAbortController(timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   return {
     controller,
     clear: () => clearTimeout(timeout)
@@ -171,7 +181,7 @@ function extractKeywords(query = "") {
     "ما", "ماذا", "هل", "كم", "كيف", "متى", "من", "الى", "إلى", "على", "في", "عن",
     "او", "أو", "ثم", "أن", "إن", "اذا", "إذا", "مع", "بين", "هذا", "هذه", "ذلك",
     "تلك", "هناك", "هنا", "الذي", "التي", "الذين", "اللاتي", "ماهو", "ماهي", "حول",
-    "بشأن", "بخصوص", "بعد", "قبل", "عند", "عندها", "ضمن", "على", "فيه", "فيها"
+    "بشأن", "بخصوص", "بعد", "قبل", "عند", "ضمن", "فيه", "فيها", "كان", "كانت"
   ]);
 
   return normalizeArabic(query)
@@ -191,21 +201,8 @@ function countKeywordMatches(text = "", keywords = []) {
   return count;
 }
 
-function scoreRecencyByDate(dateString) {
-  if (!dateString) return 0;
-
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return 0;
-
-  const now = Date.now();
-  const diffDays = Math.floor((now - date.getTime()) / (1000 * 60 * 60 * 24));
-
-  if (diffDays <= 7) return 20;
-  if (diffDays <= 30) return 16;
-  if (diffDays <= 90) return 12;
-  if (diffDays <= 180) return 8;
-  if (diffDays <= 365) return 4;
-  return 1;
+function unique(arr = []) {
+  return [...new Set(arr.filter(Boolean))];
 }
 
 function findDatesInText(text = "") {
@@ -213,16 +210,13 @@ function findDatesInText(text = "") {
 
   const isoMatches = text.match(/\b(20\d{2})[-\/](0?[1-9]|1[0-2])[-\/](0?[1-9]|[12]\d|3[01])\b/g) || [];
   for (const m of isoMatches) {
-    const normalized = m.replace(/\//g, "-");
-    results.push(normalized);
+    results.push(m.replace(/\//g, "-"));
   }
 
   const arabicDateMatches = text.match(/\b([0-3]?\d)[\/\-]([0-1]?\d)[\/\-](20\d{2})\b/g) || [];
   for (const m of arabicDateMatches) {
     const [d, mo, y] = m.split(/[\/\-]/);
-    const dd = String(d).padStart(2, "0");
-    const mm = String(mo).padStart(2, "0");
-    results.push(`${y}-${mm}-${dd}`);
+    results.push(`${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
   }
 
   return unique(results);
@@ -237,21 +231,21 @@ function pickMostRecentDate(dateCandidates = []) {
   return valid.length ? valid[0].toISOString().slice(0, 10) : "";
 }
 
-function classifySourceLabel(url = "") {
-  switch (getSourceCategory(url)) {
-    case "official":
-      return "رسمي";
-    case "academic":
-      return "أكاديمي";
-    case "professional_article":
-      return "مهني / مقالي";
-    case "twitter":
-      return "إكس / تويتر";
-    case "tiktok":
-      return "تيك توك";
-    default:
-      return "مصدر قانوني";
-  }
+function scoreRecencyByDate(dateString = "") {
+  if (!dateString) return 0;
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return 0;
+
+  const now = Date.now();
+  const diffDays = Math.floor((now - date.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 7) return 20;
+  if (diffDays <= 30) return 16;
+  if (diffDays <= 90) return 12;
+  if (diffDays <= 180) return 8;
+  if (diffDays <= 365) return 4;
+  return 1;
 }
 
 function pickMainHtmlText($) {
@@ -278,8 +272,8 @@ function pickMainHtmlText($) {
   return $("body").text() || "";
 }
 
-function buildSearchQueries(query) {
-  return [
+function buildSearchQueries(query, ruleResult) {
+  const queries = [
     `${query} نص النظام السعودي مادة`,
     `${query} شرح قانوني`,
     `${query} دراسة قانونية`,
@@ -287,9 +281,16 @@ function buildSearchQueries(query) {
     `${query} آخر تعديل`,
     `${query} filetype:pdf`
   ];
+
+  if (ruleResult?.triggered && ruleResult.correctedCharacterization) {
+    queries.push(`${ruleResult.correctedCharacterization} نص نظامي`);
+    queries.push(`${ruleResult.correctedCharacterization} شرح قانوني سعودي`);
+  }
+
+  return unique(queries);
 }
 
-/* ====== تنفيذ بحث عبر Serper ====== */
+/* ====== البحث عبر Serper ====== */
 async function serperSearch(query) {
   const finalQuery = `${query} ${DOMAIN_FILTER}`;
 
@@ -330,8 +331,8 @@ async function serperSearch(query) {
     .filter((r) => r.url);
 }
 
-/* ====== ترتيب النتائج الأولي ====== */
-function scoreSearchResult(result, userQuery) {
+/* ====== ترتيب النتائج ====== */
+function scoreSearchResult(result, userQuery, ruleResult) {
   const keywords = extractKeywords(userQuery);
   let score = getBaseSourceWeight(result.url);
 
@@ -350,6 +351,13 @@ function scoreSearchResult(result, userQuery) {
   const dateCandidates = findDatesInText(`${result.title} ${result.snippet}`);
   const mostRecent = pickMostRecentDate(dateCandidates);
   score += scoreRecencyByDate(mostRecent);
+
+  if (ruleResult?.prioritySources?.length) {
+    const category = getSourceCategory(result.url);
+    if (ruleResult.prioritySources.includes(category)) {
+      score += 8;
+    }
+  }
 
   return score;
 }
@@ -437,7 +445,7 @@ async function extractTextAndMeta(url) {
   }
 }
 
-/* ====== استخراج نص رد OpenAI ====== */
+/* ====== OpenAI ====== */
 function extractOpenAIText(data) {
   if (typeof data.output_text === "string" && data.output_text.trim()) {
     return data.output_text.trim();
@@ -471,7 +479,6 @@ function safeParseJSON(text) {
   return JSON.parse(cleaned);
 }
 
-/* ====== استدعاء OpenAI ====== */
 async function callOpenAI({ input, max_output_tokens = 2500, model = "gpt-4.1" }) {
   const openaiResp = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -520,41 +527,37 @@ ${s.text || "لم يمكن استخراج نص كافٍ."}
     .join("\n---------------------\n");
 }
 
-/* ====== بوابة التحقق القانوني ====== */
-function buildValidationPrompt(query, sourcesText) {
+/* ====== برومبت التحقق ====== */
+function buildValidationPrompt(query, sourcesText, ruleResult) {
   return `
-السؤال:
+السؤال الأصلي:
 ${query}
+
+نتيجة القواعد القانونية الصريحة:
+${JSON.stringify(ruleResult, null, 2)}
 
 المصادر المتاحة:
 ${sourcesText}
 
-أنت مدقق قانوني سعودي صارم. مهمتك ليست الجواب النهائي، بل التحقق من صحة التوصيف القانوني في السؤال قبل أي استدلال.
+أنت مدقق قانوني سعودي صارم. مهمتك ليست الجواب النهائي، بل التحقق من التوصيف القانوني في السؤال، مع الالتزام بالقواعد القانونية الصريحة الواردة أعلاه.
 
-مهم جدًا:
+قواعد إلزامية:
+- إذا كانت القواعد القانونية الصريحة قد حددت أن هناك مصطلحًا يحتاج إعادة تكييف، فلا يجوز لك اعتباره صحيحًا تلقائيًا.
+- إذا كانت القواعد قد حجبت مسارًا قانونيًا معينًا، فلا يجوز إعادة فتحه إلا إذا ظهر في المصادر الرسمية نص صريح جدًا يناقض القاعدة.
 - لا يكفي ورود مصطلح قانوني في السؤال لتطبيق أحكامه.
-- يجب التحقق أولًا من شروط انطباق هذا المصطلح على الوقائع المذكورة.
-- إذا كان في السؤال وصف غير دقيق أو فرضية خاطئة أو خلط بين مفاهيم، فيجب كشف ذلك صراحة.
-- يجب أيضًا فحص حداثة المصادر الظاهرة، وتحديد إن كان هناك مصدر أحدث ظاهر ينبغي ترجيحه.
-- عند التعارض:
-  1) النص الرسمي الأحدث أولًا
+- يجب فحص نوع العقد والواقعة وشروط الانطباق.
+- افحص حداثة المصادر الظاهرة أيضًا.
+- رتّب المصادر عند التعارض:
+  1) النص الرسمي الأحدث
   2) الأكاديمي
   3) المقالات المهنية
   4) إكس/تويتر كمصدر مهني حديث مهم
-  5) غير ذلك
-- لا تعامل إكس/تويتر كمصدر ضعيف تلقائيًا، بل كمصدر مهني حديث مهم، لكن لا يقدَّم على نص رسمي صريح عند التعارض.
+  5) تيك توك وبقية المصادر
 
-أخرج JSON فقط بالشكل التالي تمامًا:
+أخرج JSON فقط بالشكل التالي:
 
 {
   "question_summary": "",
-  "legal_elements": {
-    "contract_type": "",
-    "issue_type": "",
-    "parties": "",
-    "time_factor": "",
-    "user_terms": []
-  },
   "validation": {
     "is_question_terminology_precise": true,
     "problematic_terms": [],
@@ -562,6 +565,7 @@ ${sourcesText}
     "premise_problem_explanation": ""
   },
   "rule_gate": {
+    "must_follow_hard_rules": true,
     "user_term_legally_applicable": true,
     "must_exclude_term_based_rules": false,
     "excluded_rules_or_paths": [],
@@ -574,47 +578,47 @@ ${sourcesText}
     "latest_academic_source_date": "",
     "latest_professional_article_date": "",
     "latest_twitter_source_date": "",
-    "should_prioritize_recent_sources": true,
     "recency_notes": ""
-  },
-  "guidance_for_final_answer": {
-    "must_correct_user_term_first": false,
-    "must_warn_about_mischaracterization": false,
-    "must_prioritize_newer_sources_when_relevant": true
   }
 }
 
-أعد JSON صالحًا فقط، بلا markdown.
+أعد JSON صالحًا فقط.
 `;
 }
 
 /* ====== برومبت الجواب النهائي ====== */
-function buildFinalAnswerPrompt(query, sourcesText, gate) {
+function buildFinalAnswerPrompt(originalQuery, effectiveQuery, sourcesText, ruleResult, gate) {
   return `
 السؤال الأصلي:
-${query}
+${originalQuery}
 
-نتيجة بوابة التحقق القانوني:
+السؤال بعد تطبيق القواعد القانونية الصريحة:
+${effectiveQuery}
+
+نتيجة القواعد القانونية الصريحة:
+${JSON.stringify(ruleResult, null, 2)}
+
+نتيجة بوابة التحقق:
 ${JSON.stringify(gate, null, 2)}
 
 المصادر:
 ${sourcesText}
 
-أنت باحث قانوني سعودي. اكتب الجواب النهائي بناءً على بوابة التحقق أعلاه، لا على ظاهر ألفاظ المستخدم فقط.
+أنت باحث قانوني سعودي. اكتب الجواب النهائي بناءً على:
+1) القواعد القانونية الصريحة
+2) بوابة التحقق
+3) المصادر
 
 قواعد إلزامية:
-- إذا كانت بوابة التحقق قد قررت أن المصطلح المستخدم غير منطبق، فلا تطبق الأحكام المرتبطة به.
-- إذا وجب استبعاد مسار قانوني معين، فاستبعده صراحة في الجواب.
-- صحح التوصيف أولًا إذا لزم.
+- القواعد القانونية الصريحة مقدمة على ظاهر ألفاظ المستخدم.
+- إذا كانت القواعد قد منعت مسارًا قانونيًا، فلا تطبقه.
+- إذا كان السؤال يحتوي على توصيف يحتاج تصحيحًا، فابدأ بتصحيحه.
+- إذا كانت عبارة المستخدم غير دقيقة، فقل ذلك صراحة.
 - رجّح النص الرسمي الأحدث عند وجوده.
-- بعده الأكاديمي، ثم المقالات المهنية، ثم إكس/تويتر كمصدر حديث مهم.
-- لا تُضعف قيمة إكس/تويتر تلقائيًا، لكن لا تقدمه على نص رسمي صريح عند التعارض.
-- فرّق بين:
-  1) النص النظامي
-  2) التحليل المهني
-  3) المستجد أو النقاش الحديث
-- إذا كانت الحداثة مؤثرة في الجواب، فاذكر ذلك.
-- اجعل الجواب بصيغة HTML فقط دون أي شيء خارج HTML.
+- بعده الأكاديمي، ثم المقالات المهنية، ثم إكس/تويتر كمصدر مهني حديث مهم.
+- لا تعامل إكس/تويتر كمصدر ضعيف، لكن لا تقدمه على نص رسمي صريح عند التعارض.
+- لا تستخدم الأحكام المحجوبة في blockedTerms أو excluded_rules_or_paths.
+- لا تذكر أي مادة أو نتيجة فقط لأن لفظها ورد في السؤال.
 
 هيكل الجواب:
 
@@ -646,12 +650,11 @@ ${sourcesText}
 <li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a></li>
 </ul>
 
-إذا كان السؤال يحتوي على فرضية خاطئة، فابدأ بتصحيحها بوضوح.
+إذا كانت القواعد القانونية الصريحة قد أشارت إلى إعادة تكييف، فلا تقل إن السؤال دقيق من الأصل دون معالجة ذلك.
 `;
 }
 
-/* ====== fallback ====== */
-function buildFallbackHtml(query, sources, gate = null) {
+function buildFallbackHtml(query, sources, ruleResult = null) {
   const refs = sources
     .slice(0, 8)
     .map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.title)}</a></li>`)
@@ -660,7 +663,7 @@ function buildFallbackHtml(query, sources, gate = null) {
   return `
 <h2>إجابة قانونية أولية</h2>
 <h3>فحص توصيف السؤال</h3>
-<p>${gate?.validation?.premise_problem ? escapeHtml(gate.validation.premise_problem_explanation || "يوجد احتمال وجود خلل في توصيف السؤال.") : "تمت معالجة السؤال ضمن المتاح من المصادر."}</p>
+<p>${escapeHtml(ruleResult?.warning || "تمت معالجة السؤال ضمن المتاح من المصادر.")}</p>
 <h3>الخلاصة</h3>
 <p>${escapeHtml(query)}</p>
 <h3>المراجع</h3>
@@ -697,13 +700,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    const searchQueries = buildSearchQueries(query);
+    /* 1) تطبيق القواعد القانونية الصريحة أولًا */
+    const ruleResult = applyLegalRules(query);
+    const effectiveQuery = ruleResult?.correctedQuery || query;
+
+    /* 2) البحث بناء على السؤال بعد إعادة التكييف */
+    const searchQueries = buildSearchQueries(effectiveQuery, ruleResult);
     const resultsArrays = await Promise.all(searchQueries.map((q) => serperSearch(q)));
 
     let allResults = dedupeSources(resultsArrays.flat())
       .map((r) => ({
         ...r,
-        initialScore: scoreSearchResult(r, query)
+        initialScore: scoreSearchResult(r, effectiveQuery, ruleResult)
       }))
       .sort((a, b) => b.initialScore - a.initialScore)
       .slice(0, MAX_SOURCES);
@@ -712,10 +720,15 @@ export default async function handler(req, res) {
       return res.status(200).json({
         content: "<p>تعذر العثور على نتائج كافية في المصادر القانونية المحددة.</p>",
         sources: [],
-        type: "إجابة قانونية"
+        type: "إجابة قانونية",
+        meta: {
+          ruleResult,
+          searchQueries
+        }
       });
     }
 
+    /* 3) استخراج النصوص والتواريخ */
     const extracted = [];
     for (const r of allResults) {
       const meta = await extractTextAndMeta(r.url);
@@ -725,12 +738,24 @@ export default async function handler(req, res) {
       });
     }
 
+    /* 4) ترتيب نهائي بعد الاستخراج */
     const filteredSources = extracted
       .filter((s) => s.text && s.text.length >= 120)
       .map((s) => {
         let finalScore = s.initialScore || 0;
         finalScore += scoreRecencyByDate(s.extractedDate);
-        finalScore += countKeywordMatches(`${s.title} ${s.snippet} ${s.text.slice(0, 1500)}`, extractKeywords(query)) * 2;
+        finalScore += countKeywordMatches(
+          `${s.title} ${s.snippet} ${s.text.slice(0, 1500)}`,
+          extractKeywords(effectiveQuery)
+        ) * 2;
+
+        if (ruleResult?.prioritySources?.length) {
+          const category = getSourceCategory(s.url);
+          if (ruleResult.prioritySources.includes(category)) {
+            finalScore += 6;
+          }
+        }
+
         return {
           ...s,
           finalScore
@@ -743,65 +768,60 @@ export default async function handler(req, res) {
       return res.status(200).json({
         content: "<p>تم العثور على نتائج، لكن تعذر استخراج نصوص قانونية كافية للتحليل.</p>",
         sources: allResults,
-        type: "إجابة قانونية"
+        type: "إجابة قانونية",
+        meta: {
+          ruleResult,
+          searchQueries
+        }
       });
     }
 
     const sourcesText = buildSourcesText(filteredSources);
 
+    /* 5) بوابة تحقق مرتبطة بالقواعد */
     let gate;
     try {
       const validationData = await callOpenAI({
-        input: buildValidationPrompt(query, sourcesText),
+        input: buildValidationPrompt(query, sourcesText, ruleResult),
         max_output_tokens: 1800,
         model: "gpt-4.1"
       });
+
       gate = safeParseJSON(extractOpenAIText(validationData));
     } catch {
       gate = {
         question_summary: query,
-        legal_elements: {
-          contract_type: "",
-          issue_type: "",
-          parties: "",
-          time_factor: "",
-          user_terms: []
-        },
         validation: {
-          is_question_terminology_precise: true,
-          problematic_terms: [],
-          premise_problem: false,
-          premise_problem_explanation: ""
+          is_question_terminology_precise: !ruleResult?.triggered,
+          problematic_terms: ruleResult?.blockedTerms || [],
+          premise_problem: !!ruleResult?.triggered,
+          premise_problem_explanation: ruleResult?.warning || ""
         },
         rule_gate: {
-          user_term_legally_applicable: true,
-          must_exclude_term_based_rules: false,
-          excluded_rules_or_paths: [],
-          why_excluded: "",
-          correct_legal_characterization: "",
-          allowed_rule_paths: []
+          must_follow_hard_rules: true,
+          user_term_legally_applicable: !(ruleResult?.blockedTerms?.length),
+          must_exclude_term_based_rules: !!(ruleResult?.blockedTerms?.length),
+          excluded_rules_or_paths: ruleResult?.blockedTerms || [],
+          why_excluded: ruleResult?.explanation || "",
+          correct_legal_characterization: ruleResult?.correctedCharacterization || "",
+          allowed_rule_paths: ruleResult?.appliedRules || []
         },
         recency_review: {
           latest_official_source_date: "",
           latest_academic_source_date: "",
           latest_professional_article_date: "",
           latest_twitter_source_date: "",
-          should_prioritize_recent_sources: true,
           recency_notes: ""
-        },
-        guidance_for_final_answer: {
-          must_correct_user_term_first: false,
-          must_warn_about_mischaracterization: false,
-          must_prioritize_newer_sources_when_relevant: true
         }
       };
     }
 
+    /* 6) الجواب النهائي */
     let content = "";
     try {
       const finalData = await callOpenAI({
-        input: buildFinalAnswerPrompt(query, sourcesText, gate),
-        max_output_tokens: 2800,
+        input: buildFinalAnswerPrompt(query, effectiveQuery, sourcesText, ruleResult, gate),
+        max_output_tokens: 3000,
         model: "gpt-4.1"
       });
       content = extractOpenAIText(finalData);
@@ -810,7 +830,7 @@ export default async function handler(req, res) {
     }
 
     if (!content || !content.trim()) {
-      content = buildFallbackHtml(query, filteredSources, gate);
+      content = buildFallbackHtml(query, filteredSources, ruleResult);
     }
 
     return res.status(200).json({
@@ -824,9 +844,12 @@ export default async function handler(req, res) {
       })),
       type: "إجابة قانونية",
       meta: {
+        originalQuery: query,
+        effectiveQuery,
         searchQueries,
         totalResults: allResults.length,
         extractedResults: filteredSources.length,
+        ruleResult,
         validationGate: gate
       }
     });
