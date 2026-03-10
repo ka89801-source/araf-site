@@ -70,12 +70,14 @@ async function serperSearch(query) {
 
   const raw = await resp.text();
 
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error(`فشل قراءة استجابة Serper: ${raw}`);
-  }
+let data;
+
+try {
+  data = JSON.parse(raw);
+} catch (err) {
+  console.error("Serper returned non-JSON:", raw);
+  return [];
+}
 
   if (!resp.ok) {
     throw new Error(data?.message || "خطأ في Serper");
