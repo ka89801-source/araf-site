@@ -8,22 +8,26 @@ const MAX_SOURCES = 24;
 const MAX_CHARS_PER_SOURCE = 7000;
 const FETCH_TIMEOUT_MS = 15000;
 
-/* ====== فلترة المصادر القانونية السعودية ====== */
+/* ====== فلترة البحث الأولية ======
+مقصودها توسيع المجال داخل السياق السعودي:
+- رسمي سعودي
+- جامعات سعودية
+- صحف/منصات سعودية
+- X / Twitter
+- LinkedIn
+- TikTok
+*/
 const DOMAIN_FILTER = `
-(site:boe.gov.sa OR
-site:laws.boe.gov.sa OR
-site:moj.gov.sa OR
-site:hrsd.gov.sa OR
-site:mc.gov.sa OR
-site:gosi.gov.sa OR
+(site:gov.sa OR
 site:edu.sa OR
-site:linkedin.com OR
 site:x.com OR
 site:twitter.com OR
-site:tiktok.com)
+site:linkedin.com OR
+site:tiktok.com OR
+site:sa)
 `;
 
-/* ====== تصنيف المصادر ====== */
+/* ====== أدوات عامة ====== */
 function getHostname(url = "") {
   try {
     return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
@@ -32,81 +36,6 @@ function getHostname(url = "") {
   }
 }
 
-function getSourceCategory(url = "") {
-  const host = getHostname(url);
-
-  if (
-    host === "laws.boe.gov.sa" ||
-    host.endsWith(".boe.gov.sa") ||
-    host === "boe.gov.sa" ||
-    host === "moj.gov.sa" ||
-    host.endsWith(".moj.gov.sa") ||
-    host === "hrsd.gov.sa" ||
-    host.endsWith(".hrsd.gov.sa") ||
-    host === "mc.gov.sa" ||
-    host.endsWith(".mc.gov.sa") ||
-    host === "gosi.gov.sa" ||
-    host.endsWith(".gosi.gov.sa")
-  ) {
-    return "official";
-  }
-
-  if (host === "edu.sa" || host.endsWith(".edu.sa")) {
-    return "academic";
-  }
-
-  if (host.includes("linkedin.com")) {
-    return "professional_article";
-  }
-
-  if (host.includes("x.com") || host.includes("twitter.com")) {
-    return "twitter";
-  }
-
-  if (host.includes("tiktok.com")) {
-    return "tiktok";
-  }
-
-  return "other";
-}
-
-function classifySourceLabel(url = "") {
-  switch (getSourceCategory(url)) {
-    case "official":
-      return "رسمي";
-    case "academic":
-      return "أكاديمي";
-    case "professional_article":
-      return "مهني / مقالي";
-    case "twitter":
-      return "إكس / تويتر";
-    case "tiktok":
-      return "تيك توك";
-    default:
-      return "مصدر قانوني";
-  }
-}
-
-function getBaseSourceWeight(url = "") {
-  const category = getSourceCategory(url);
-
-  switch (category) {
-    case "official":
-      return 100;
-    case "academic":
-      return 88;
-    case "professional_article":
-      return 80;
-    case "twitter":
-      return 76;
-    case "tiktok":
-      return 68;
-    default:
-      return 55;
-  }
-}
-
-/* ====== أدوات مساعدة ====== */
 function cleanText(text = "") {
   return text
     .replace(/\u00a0/g, " ")
@@ -130,7 +59,7 @@ function dedupeSources(arr = []) {
   const out = [];
 
   for (const r of arr) {
-    if (!r.url) continue;
+    if (!r?.url) continue;
 
     let normalized = r.url.trim();
 
@@ -165,7 +94,7 @@ function buildAbortController(timeoutMs = FETCH_TIMEOUT_MS) {
 }
 
 function normalizeArabic(text = "") {
-  return text
+  return String(text)
     .replace(/[أإآ]/g, "ا")
     .replace(/ة/g, "ه")
     .replace(/ى/g, "ي")
@@ -181,7 +110,8 @@ function extractKeywords(query = "") {
     "ما", "ماذا", "هل", "كم", "كيف", "متى", "من", "الى", "إلى", "على", "في", "عن",
     "او", "أو", "ثم", "أن", "إن", "اذا", "إذا", "مع", "بين", "هذا", "هذه", "ذلك",
     "تلك", "هناك", "هنا", "الذي", "التي", "الذين", "اللاتي", "ماهو", "ماهي", "حول",
-    "بشأن", "بخصوص", "بعد", "قبل", "عند", "ضمن", "فيه", "فيها", "كان", "كانت"
+    "بشأن", "بخصوص", "بعد", "قبل", "عند", "ضمن", "فيه", "فيها", "كان", "كانت",
+    "لقد", "قد", "الى", "الي", "عنها", "عنه", "عليها", "عليه"
   ]);
 
   return normalizeArabic(query)
@@ -248,46 +178,198 @@ function scoreRecencyByDate(dateString = "") {
   return 1;
 }
 
-function pickMainHtmlText($) {
-  const selectors = [
-    "main",
-    "article",
-    "[role='main']",
-    ".content",
-    ".article",
-    ".article-content",
-    ".article-body",
-    ".post-content",
-    ".entry-content",
-    ".main-content",
-    "#content"
-  ];
+/* ====== تصنيف المصدر ====== */
+function getSourceCategory(url = "") {
+  const host = getHostname(url);
 
-  for (const selector of selectors) {
-    const el = $(selector).first();
-    const text = el.text()?.trim();
-    if (text && text.length > 300) return text;
+  if (
+    host.endsWith(".gov.sa") ||
+    host === "gov.sa" ||
+    host === "laws.boe.gov.sa" ||
+    host.endsWith(".boe.gov.sa")
+  ) {
+    return "official";
   }
 
-  return $("body").text() || "";
+  if (host.endsWith(".edu.sa") || host === "edu.sa") {
+    return "academic";
+  }
+
+  if (host.includes("linkedin.com")) {
+    return "linkedin";
+  }
+
+  if (host.includes("x.com") || host.includes("twitter.com")) {
+    return "twitter";
+  }
+
+  if (host.includes("tiktok.com")) {
+    return "tiktok";
+  }
+
+  if (host.endsWith(".sa") || host === "sa") {
+    return "saudi_site";
+  }
+
+  return "other";
 }
 
-function buildSearchQueries(query, ruleResult) {
-  const queries = [
-    `${query} نص النظام السعودي مادة`,
-    `${query} شرح قانوني`,
-    `${query} دراسة قانونية`,
-    `${query} تحديث قانوني`,
-    `${query} آخر تعديل`,
-    `${query} filetype:pdf`
+function classifySourceLabel(url = "") {
+  switch (getSourceCategory(url)) {
+    case "official":
+      return "رسمي سعودي";
+    case "academic":
+      return "أكاديمي سعودي";
+    case "linkedin":
+      return "لينكدإن مهني";
+    case "twitter":
+      return "إكس / تويتر";
+    case "tiktok":
+      return "تيك توك";
+    case "saudi_site":
+      return "موقع سعودي";
+    default:
+      return "مصدر قانوني";
+  }
+}
+
+function getBaseSourceWeight(url = "") {
+  const category = getSourceCategory(url);
+
+  switch (category) {
+    case "official":
+      return 100;
+    case "academic":
+      return 90;
+    case "saudi_site":
+      return 82;
+    case "linkedin":
+      return 80;
+    case "twitter":
+      return 78;
+    case "tiktok":
+      return 70;
+    default:
+      return 50;
+  }
+}
+
+/* ====== فلترة سعودية ذكية ======
+لا يكفي أن يكون الموقع رسميًا.
+المهم:
+- سعودي الدومين أو سعودي الصلة
+- متعلق بالقانون أو الأنظمة أو السعودية
+*/
+function isSaudiRelevant(result) {
+  const combined = `${result.title || ""} ${result.snippet || ""} ${result.url || ""}`.toLowerCase();
+
+  const saudiKeywords = [
+    "السعودية",
+    "المملكه العربيه السعوديه",
+    "المملكة العربية السعودية",
+    "saudi",
+    "ksa",
+    "saudi arabia",
+    "نظام العمل السعودي",
+    "نظام سعودي",
+    "وزارة الموارد البشرية",
+    "وزارة العدل",
+    "وزارة التجاره",
+    "وزارة التجارة",
+    "ديوان المظالم",
+    "هيئة الخبراء",
+    "الرياض",
+    "جدة",
+    "الدمام",
+    "الخبر",
+    "المحكمة",
+    "المحاكم السعودية",
+    ".gov.sa",
+    ".edu.sa",
+    ".sa"
   ];
 
-  if (ruleResult?.triggered && ruleResult.correctedCharacterization) {
-    queries.push(`${ruleResult.correctedCharacterization} نص نظامي`);
-    queries.push(`${ruleResult.correctedCharacterization} شرح قانوني سعودي`);
-  }
+  return saudiKeywords.some((k) => combined.includes(k.toLowerCase()));
+}
 
-  return unique(queries);
+function isBlockedForeignContext(result) {
+  const combined = `${result.title || ""} ${result.snippet || ""}`.toLowerCase();
+
+  const blockedCountryIndicators = [
+    "الكويت",
+    "الكويتي",
+    "kuwait",
+    "فلسطين",
+    "palestine",
+    "الأردن",
+    "jordan",
+    "مصر",
+    "egypt",
+    "العراق",
+    "iraq",
+    "لبنان",
+    "lebanon",
+    "تونس",
+    "tunisia",
+    "الجزائر",
+    "algeria",
+    "المغرب",
+    "morocco",
+    "الإمارات",
+    "uae",
+    "قطر",
+    "qatar",
+    "البحرين",
+    "bahrain",
+    "عمان",
+    "oman"
+  ];
+
+  return blockedCountryIndicators.some((k) => combined.includes(k));
+}
+
+function filterSaudiResults(results) {
+  return results.filter((r) => {
+    const host = getHostname(r.url);
+    const category = getSourceCategory(r.url);
+
+    const isSaudiDomain =
+      category === "official" ||
+      category === "academic" ||
+      category === "saudi_site";
+
+    const isGeneralPlatform =
+      category === "twitter" ||
+      category === "linkedin" ||
+      category === "tiktok";
+
+    if (isBlockedForeignContext(r) && !isSaudiRelevant(r)) {
+      return false;
+    }
+
+    if (isSaudiDomain) return true;
+
+    if (isGeneralPlatform) {
+      return isSaudiRelevant(r);
+    }
+
+    return isSaudiRelevant(r);
+  });
+}
+
+/* ====== البحث ======
+البحث يعتمد على السؤال الأصلي فقط
+ولا يستخدم السؤال المصحح قانونيًا حتى لا تتلوث النتائج
+*/
+function buildSearchQueries(originalQuery) {
+  return unique([
+    `${originalQuery} نص النظام السعودي مادة`,
+    `${originalQuery} شرح قانوني سعودي`,
+    `${originalQuery} دراسة قانونية سعودية`,
+    `${originalQuery} تحديث قانوني سعودي`,
+    `${originalQuery} آخر تعديل سعودي`,
+    `${originalQuery} filetype:pdf السعودية قانوني`
+  ]);
 }
 
 /* ====== البحث عبر Serper ====== */
@@ -359,10 +441,37 @@ function scoreSearchResult(result, userQuery, ruleResult) {
     }
   }
 
+  if (isSaudiRelevant(result)) score += 6;
+  if (isBlockedForeignContext(result) && !isSaudiRelevant(result)) score -= 30;
+
   return score;
 }
 
-/* ====== استخراج النص والتاريخ ====== */
+/* ====== استخراج النص ====== */
+function pickMainHtmlText($) {
+  const selectors = [
+    "main",
+    "article",
+    "[role='main']",
+    ".content",
+    ".article",
+    ".article-content",
+    ".article-body",
+    ".post-content",
+    ".entry-content",
+    ".main-content",
+    "#content"
+  ];
+
+  for (const selector of selectors) {
+    const el = $(selector).first();
+    const text = el.text()?.trim();
+    if (text && text.length > 300) return text;
+  }
+
+  return $("body").text() || "";
+}
+
 async function extractTextAndMeta(url) {
   const { controller, clear } = buildAbortController();
 
@@ -528,55 +637,52 @@ ${s.text || "لم يمكن استخراج نص كافٍ."}
 }
 
 /* ====== برومبت التحقق ====== */
-function buildValidationPrompt(query, sourcesText, ruleResult) {
+function buildValidationPrompt(originalQuery, sourcesText, ruleResult) {
   return `
 السؤال الأصلي:
-${query}
+${originalQuery}
 
 نتيجة القواعد القانونية الصريحة:
 ${JSON.stringify(ruleResult, null, 2)}
 
-المصادر المتاحة:
+المصادر:
 ${sourcesText}
 
-أنت مدقق قانوني سعودي صارم. مهمتك ليست الجواب النهائي، بل التحقق من التوصيف القانوني في السؤال، مع الالتزام بالقواعد القانونية الصريحة الواردة أعلاه.
+أنت مدقق قانوني سعودي صارم.
+
+مهمتك:
+1) فحص هل السؤال كما صيغ دقيق قانونيًا أم يحتاج تصحيح.
+2) الالتزام بالقواعد القانونية الصريحة أعلاه.
+3) عدم السماح بتمرير أي توصيف محجوب أو غير منطبق.
+4) ملاحظة حداثة المصادر.
 
 قواعد إلزامية:
-- إذا كانت القواعد القانونية الصريحة قد حددت أن هناك مصطلحًا يحتاج إعادة تكييف، فلا يجوز لك اعتباره صحيحًا تلقائيًا.
-- إذا كانت القواعد قد حجبت مسارًا قانونيًا معينًا، فلا يجوز إعادة فتحه إلا إذا ظهر في المصادر الرسمية نص صريح جدًا يناقض القاعدة.
-- لا يكفي ورود مصطلح قانوني في السؤال لتطبيق أحكامه.
-- يجب فحص نوع العقد والواقعة وشروط الانطباق.
-- افحص حداثة المصادر الظاهرة أيضًا.
-- رتّب المصادر عند التعارض:
-  1) النص الرسمي الأحدث
-  2) الأكاديمي
-  3) المقالات المهنية
-  4) إكس/تويتر كمصدر مهني حديث مهم
-  5) تيك توك وبقية المصادر
+- إذا كانت القواعد القانونية الصريحة قد قررت أن هناك مصطلحًا يحتاج إعادة تكييف، فلا يجوز اعتبار السؤال دقيقًا بصيغته الأصلية.
+- لا يكفي ورود لفظ قانوني في السؤال لتطبيق أحكامه.
+- إذا كانت القواعد قد حجبت مسارًا قانونيًا، فلا يجوز إعادة فتحه إلا إذا ظهر نص رسمي سعودي صريح جدًا يناقضه.
+- عند التعارض: الرسمي الأحدث أولًا، ثم الأكاديمي السعودي، ثم المقالات المهنية السعودية، ثم إكس/تويتر السعودي، ثم لينكدإن، ثم تيك توك.
 
 أخرج JSON فقط بالشكل التالي:
 
 {
-  "question_summary": "",
   "validation": {
     "is_question_terminology_precise": true,
-    "problematic_terms": [],
     "premise_problem": false,
-    "premise_problem_explanation": ""
+    "premise_problem_explanation": "",
+    "must_rephrase_question_legally": false,
+    "legal_rephrased_question": ""
   },
   "rule_gate": {
     "must_follow_hard_rules": true,
-    "user_term_legally_applicable": true,
     "must_exclude_term_based_rules": false,
     "excluded_rules_or_paths": [],
     "why_excluded": "",
-    "correct_legal_characterization": "",
-    "allowed_rule_paths": []
+    "correct_legal_characterization": ""
   },
   "recency_review": {
     "latest_official_source_date": "",
     "latest_academic_source_date": "",
-    "latest_professional_article_date": "",
+    "latest_professional_source_date": "",
     "latest_twitter_source_date": "",
     "recency_notes": ""
   }
@@ -587,13 +693,13 @@ ${sourcesText}
 }
 
 /* ====== برومبت الجواب النهائي ====== */
-function buildFinalAnswerPrompt(originalQuery, effectiveQuery, sourcesText, ruleResult, gate) {
+function buildFinalAnswerPrompt(originalQuery, legalRephrasedQuestion, sourcesText, ruleResult, gate) {
   return `
 السؤال الأصلي:
 ${originalQuery}
 
-السؤال بعد تطبيق القواعد القانونية الصريحة:
-${effectiveQuery}
+الصياغة القانونية المصححة الواجبة الاعتماد:
+${legalRephrasedQuestion}
 
 نتيجة القواعد القانونية الصريحة:
 ${JSON.stringify(ruleResult, null, 2)}
@@ -604,28 +710,25 @@ ${JSON.stringify(gate, null, 2)}
 المصادر:
 ${sourcesText}
 
-أنت باحث قانوني سعودي. اكتب الجواب النهائي بناءً على:
-1) القواعد القانونية الصريحة
-2) بوابة التحقق
-3) المصادر
+أنت باحث قانوني سعودي.
 
 قواعد إلزامية:
-- القواعد القانونية الصريحة مقدمة على ظاهر ألفاظ المستخدم.
-- إذا كانت القواعد قد منعت مسارًا قانونيًا، فلا تطبقه.
-- إذا كان السؤال يحتوي على توصيف يحتاج تصحيحًا، فابدأ بتصحيحه.
-- إذا كانت عبارة المستخدم غير دقيقة، فقل ذلك صراحة.
-- رجّح النص الرسمي الأحدث عند وجوده.
-- بعده الأكاديمي، ثم المقالات المهنية، ثم إكس/تويتر كمصدر مهني حديث مهم.
-- لا تعامل إكس/تويتر كمصدر ضعيف، لكن لا تقدمه على نص رسمي صريح عند التعارض.
-- لا تستخدم الأحكام المحجوبة في blockedTerms أو excluded_rules_or_paths.
-- لا تذكر أي مادة أو نتيجة فقط لأن لفظها ورد في السؤال.
+- لا تجب على السؤال بصيغته الأصلية إذا كانت صياغته القانونية غير دقيقة.
+- يجب أن تبدأ الجواب بتوضيح الخلل في التوصيف، ثم إعادة صياغة السؤال بالصيغة القانونية الصحيحة، ثم الجواب بناء على الصيغة المصححة.
+- إذا حظرت القواعد مسارًا قانونيًا، فلا تطبقه.
+- لا تطبق أحكام أي مصطلح لمجرد وروده في السؤال.
+- رجح النص الرسمي السعودي الأحدث، ثم الأكاديمي السعودي، ثم المقالات المهنية السعودية، ثم إكس/تويتر السعودي كمصدر مهني حديث مهم.
+- لا تجعل الجواب يبدو وكأنه وافق على صياغة المستخدم إن كانت خاطئة.
 
-هيكل الجواب:
+الهيكل الإلزامي:
 
 <h2>عنوان الموضوع</h2>
 
-<h3>فحص توصيف السؤال</h3>
-<p>...</p>
+<h3>تصحيح صياغة السؤال</h3>
+<p>
+ابدأ بعبارة صريحة تبين أن السؤال بصيغته الأصلية يحتاج تصحيحًا إن كان كذلك،
+ثم اكتب الصياغة القانونية الصحيحة للمسألة.
+</p>
 
 <h3>التكييف القانوني الصحيح</h3>
 <p>...</p>
@@ -650,11 +753,15 @@ ${sourcesText}
 <li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a></li>
 </ul>
 
-إذا كانت القواعد القانونية الصريحة قد أشارت إلى إعادة تكييف، فلا تقل إن السؤال دقيق من الأصل دون معالجة ذلك.
+مهم جدًا:
+- إذا كان السؤال يحتاج تصحيحًا، فلا تقل إن المصطلحات الواردة فيه دقيقة.
+- يجب أن يظهر التصحيح نفسه داخل الجواب النهائي بوضوح.
+- لا تستخدم تعبيرات داخلية مثل "تنبيه داخلي" أو "قواعد داخلية" في الجواب.
+- الجواب بصيغة HTML فقط.
 `;
 }
 
-function buildFallbackHtml(query, sources, ruleResult = null) {
+function buildFallbackHtml(originalQuery, legalRephrasedQuestion, sources, ruleResult = null) {
   const refs = sources
     .slice(0, 8)
     .map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.title)}</a></li>`)
@@ -662,10 +769,14 @@ function buildFallbackHtml(query, sources, ruleResult = null) {
 
   return `
 <h2>إجابة قانونية أولية</h2>
-<h3>فحص توصيف السؤال</h3>
-<p>${escapeHtml(ruleResult?.warning || "تمت معالجة السؤال ضمن المتاح من المصادر.")}</p>
+<h3>تصحيح صياغة السؤال</h3>
+<p>${escapeHtml(
+    legalRephrasedQuestion && legalRephrasedQuestion !== originalQuery
+      ? `الصياغة القانونية الأدق للمسألة هي: ${legalRephrasedQuestion}`
+      : ruleResult?.warning || "تمت معالجة السؤال ضمن المتاح من المصادر."
+  )}</p>
 <h3>الخلاصة</h3>
-<p>${escapeHtml(query)}</p>
+<p>${escapeHtml(originalQuery)}</p>
 <h3>المراجع</h3>
 <ul>${refs}</ul>
 `;
@@ -700,25 +811,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    /* 1) تطبيق القواعد القانونية الصريحة أولًا */
+    /* 1) تطبيق القواعد القانونية الصريحة */
     const ruleResult = applyLegalRules(query);
-    const effectiveQuery = ruleResult?.correctedQuery || query;
 
-    /* 2) البحث بناء على السؤال بعد إعادة التكييف */
-    const searchQueries = buildSearchQueries(effectiveQuery, ruleResult);
+    /* 2) البحث يكون بالسؤال الأصلي فقط */
+    const searchQueries = buildSearchQueries(query);
     const resultsArrays = await Promise.all(searchQueries.map((q) => serperSearch(q)));
 
-    let allResults = dedupeSources(resultsArrays.flat())
+    let allResults = filterSaudiResults(
+      dedupeSources(resultsArrays.flat())
+    )
       .map((r) => ({
         ...r,
-        initialScore: scoreSearchResult(r, effectiveQuery, ruleResult)
+        initialScore: scoreSearchResult(r, query, ruleResult)
       }))
       .sort((a, b) => b.initialScore - a.initialScore)
       .slice(0, MAX_SOURCES);
 
     if (!allResults.length) {
       return res.status(200).json({
-        content: "<p>تعذر العثور على نتائج كافية في المصادر القانونية المحددة.</p>",
+        content: "<p>تعذر العثور على نتائج كافية في المصادر القانونية السعودية أو المتعلقة بالسياق السعودي.</p>",
         sources: [],
         type: "إجابة قانونية",
         meta: {
@@ -738,15 +850,24 @@ export default async function handler(req, res) {
       });
     }
 
-    /* 4) ترتيب نهائي بعد الاستخراج */
+    /* 4) فلترة ثانية بعد الاستخراج لضمان الصلة السعودية */
     const filteredSources = extracted
       .filter((s) => s.text && s.text.length >= 120)
+      .filter((s) => {
+        const pseudoResult = {
+          title: s.title,
+          snippet: `${s.snippet} ${s.text.slice(0, 1200)}`,
+          url: s.url
+        };
+
+        return filterSaudiResults([pseudoResult]).length > 0;
+      })
       .map((s) => {
         let finalScore = s.initialScore || 0;
         finalScore += scoreRecencyByDate(s.extractedDate);
         finalScore += countKeywordMatches(
           `${s.title} ${s.snippet} ${s.text.slice(0, 1500)}`,
-          extractKeywords(effectiveQuery)
+          extractKeywords(query)
         ) * 2;
 
         if (ruleResult?.prioritySources?.length) {
@@ -766,7 +887,7 @@ export default async function handler(req, res) {
 
     if (!filteredSources.length) {
       return res.status(200).json({
-        content: "<p>تم العثور على نتائج، لكن تعذر استخراج نصوص قانونية كافية للتحليل.</p>",
+        content: "<p>تم العثور على نتائج أولية، لكن تعذر استخراج نصوص سعودية كافية ومرتبطة بالسؤال للتحليل.</p>",
         sources: allResults,
         type: "إجابة قانونية",
         meta: {
@@ -778,7 +899,7 @@ export default async function handler(req, res) {
 
     const sourcesText = buildSourcesText(filteredSources);
 
-    /* 5) بوابة تحقق مرتبطة بالقواعد */
+    /* 5) بوابة التحقق */
     let gate;
     try {
       const validationData = await callOpenAI({
@@ -790,37 +911,40 @@ export default async function handler(req, res) {
       gate = safeParseJSON(extractOpenAIText(validationData));
     } catch {
       gate = {
-        question_summary: query,
         validation: {
           is_question_terminology_precise: !ruleResult?.triggered,
-          problematic_terms: ruleResult?.blockedTerms || [],
           premise_problem: !!ruleResult?.triggered,
-          premise_problem_explanation: ruleResult?.warning || ""
+          premise_problem_explanation: ruleResult?.warning || "",
+          must_rephrase_question_legally: !!ruleResult?.triggered,
+          legal_rephrased_question: ruleResult?.correctedCharacterization || query
         },
         rule_gate: {
           must_follow_hard_rules: true,
-          user_term_legally_applicable: !(ruleResult?.blockedTerms?.length),
           must_exclude_term_based_rules: !!(ruleResult?.blockedTerms?.length),
           excluded_rules_or_paths: ruleResult?.blockedTerms || [],
           why_excluded: ruleResult?.explanation || "",
-          correct_legal_characterization: ruleResult?.correctedCharacterization || "",
-          allowed_rule_paths: ruleResult?.appliedRules || []
+          correct_legal_characterization: ruleResult?.correctedCharacterization || ""
         },
         recency_review: {
           latest_official_source_date: "",
           latest_academic_source_date: "",
-          latest_professional_article_date: "",
+          latest_professional_source_date: "",
           latest_twitter_source_date: "",
           recency_notes: ""
         }
       };
     }
 
+    const legalRephrasedQuestion =
+      gate?.validation?.legal_rephrased_question ||
+      ruleResult?.correctedCharacterization ||
+      query;
+
     /* 6) الجواب النهائي */
     let content = "";
     try {
       const finalData = await callOpenAI({
-        input: buildFinalAnswerPrompt(query, effectiveQuery, sourcesText, ruleResult, gate),
+        input: buildFinalAnswerPrompt(query, legalRephrasedQuestion, sourcesText, ruleResult, gate),
         max_output_tokens: 3000,
         model: "gpt-4.1"
       });
@@ -830,7 +954,7 @@ export default async function handler(req, res) {
     }
 
     if (!content || !content.trim()) {
-      content = buildFallbackHtml(query, filteredSources, ruleResult);
+      content = buildFallbackHtml(query, legalRephrasedQuestion, filteredSources, ruleResult);
     }
 
     return res.status(200).json({
@@ -845,7 +969,7 @@ export default async function handler(req, res) {
       type: "إجابة قانونية",
       meta: {
         originalQuery: query,
-        effectiveQuery,
+        legalRephrasedQuestion,
         searchQueries,
         totalResults: allResults.length,
         extractedResults: filteredSources.length,
