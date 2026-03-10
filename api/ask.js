@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import pdf from "pdf-parse";
+import { searchSocialSources } from "../lib/socialSearch.js";
 
 /* ====== إعدادات ====== */
 const SOCIAL_SEARCH_RULES = `
@@ -191,11 +192,20 @@ export default async function handler(req, res) {
     const researchSearch = `${query} دراسة قانونية`;
 
     const results1 = await serperSearch(systemSearch);
-    const results2 = await serperSearch(analysisSearch);
-    const results3 = await serperSearch(researchSearch);
+const results2 = await serperSearch(analysisSearch);
+const results3 = await serperSearch(researchSearch);
 
-    let allResults = [...results1, ...results2, ...results3];
-    allResults = dedupeSources(allResults).slice(0, MAX_SOURCES);
+/* ====== بحث إضافي في تويتر وتيك توك ====== */
+const socialResults = await searchSocialSources(query, serperSearch);
+
+let allResults = [
+  ...results1,
+  ...results2,
+  ...results3,
+  ...socialResults
+];
+
+allResults = dedupeSources(allResults).slice(0, MAX_SOURCES);
 
     if (!allResults.length) {
       return res.status(200).json({
@@ -210,12 +220,24 @@ export default async function handler(req, res) {
     for (const r of allResults) {
       const pageText = await extractText(r.url);
 
-      sourcesText += `
+      const sourceType =
+  r.sourceType ||
+  (r.url.includes("x.com") || r.url.includes("twitter.com")
+    ? "إكس / تويتر"
+    : r.url.includes("tiktok.com")
+    ? "تيك توك"
+    : "مصدر قانوني");
+
+sourcesText += `
+نوع المصدر: ${sourceType}
 العنوان: ${r.title}
 الرابط: ${r.url}
 الملخص: ${r.snippet}
 النص:
 ${pageText || "لم يمكن استخراج نص كافٍ."}
+
+---------------------
+`;
 
 ---------------------
 `;
@@ -233,8 +255,13 @@ ${SOCIAL_SEARCH_RULES}
 
 التعليمات:
 - اعتمد أولًا على النصوص النظامية الرسمية.
-- ثم المقالات القانونية للمحامين السعوديين.
+- ثم اعتمد مباشرة بعد ذلك على نتائج تويتر (X) وتيك توك السعودية المتخصصة إذا كانت مرتبطة بوضوح بالقانون السعودي أو نظام العمل السعودي أو الممارسة القانونية السعودية.
+- اعتبر نتائج تويتر وتيك توك المهنية السعودية مصدرًا قويًا في الفهم العملي والتحديثات الحديثة، وتلي المصادر الرسمية مباشرة.
+- ثم بعد ذلك استفد من المقالات القانونية السعودية.
 - ثم الأبحاث والدراسات.
+- إذا تعارض محتوى السوشال مع نص نظامي سعودي صريح، فقدم النص النظامي.
+- إذا تكرر نفس الفهم عند أكثر من حساب سعودي متخصص، فيمكن اعتباره اتجاهًا مهنيًا جديرًا بالذكر.
+- استبعد أي محتوى غير سعودي أو غير متعلق بالقانون السعودي.
 - اعتمد الأحدث فالأحدث متى أمكن.
 - اكتب الإجابة بالعربية.
 - اجعل الإجابة بصيغة HTML.
