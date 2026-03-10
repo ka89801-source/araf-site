@@ -126,6 +126,202 @@ function dedupeSources(arr) {
   return out;
 }
 
+/* ====== استدعاء OpenAI ====== */
+async function callOpenAI({ model = "gpt-4.1", input, max_output_tokens = 2500 }) {
+  const openaiResp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      max_output_tokens
+    })
+  });
+
+  const raw = await openaiResp.text();
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(raw || "تعذر قراءة استجابة OpenAI");
+  }
+
+  if (!openaiResp.ok) {
+    throw new Error(data?.error?.message || "خطأ في OpenAI");
+  }
+
+  return data;
+}
+
+/* ====== بناء نص المصادر ====== */
+function buildSourcesText(allResults, extractedTextsMap) {
+  let sourcesText = "";
+
+  for (const r of allResults) {
+    const pageText = extractedTextsMap.get(r.url) || "";
+
+    sourcesText += `
+العنوان: ${r.title}
+الرابط: ${r.url}
+الملخص: ${r.snippet}
+النص:
+${pageText || "لم يمكن استخراج نص كافٍ."}
+
+---------------------
+`;
+  }
+
+  return sourcesText;
+}
+
+/* ====== برومبت فحص السؤال وتكييفه ====== */
+function buildIssueSpotterPrompt(query, sourcesText) {
+  return `
+السؤال:
+${query}
+
+المصادر القانونية التي تم جمعها:
+${sourcesText}
+
+أنت محلل قانوني سعودي متخصص، ومهمتك هنا ليست إعطاء الجواب النهائي بعد، بل فحص السؤال نفسه والتأكد من صحة توصيفه القانوني.
+
+المطلوب:
+1) استخراج عناصر السؤال القانونية.
+2) تحديد المصطلحات القانونية التي استخدمها السائل.
+3) التحقق هل هذه المصطلحات منطبقة فعلًا على الوقائع المذكورة أم لا.
+4) اكتشاف أي فرضية خاطئة أو توصيف غير دقيق أو خلط بين مفاهيم قانونية.
+5) إعادة التكييف القانوني الصحيح للمسألة إن لزم.
+6) تحديد ما الذي يمكن أن ينطبق نظامًا وما الذي لا ينبغي تطبيقه لمجرد ورود لفظه في السؤال.
+
+قواعد إلزامية:
+- لا تطبق أي حكم لمجرد أن السائل استعمل لفظًا قانونيًا في السؤال.
+- العبرة بالتكييف النظامي الصحيح للواقعة لا بالتسمية التي استعملها السائل.
+- إذا كان السؤال مبنيًا على فرضية غير دقيقة، فاذكر ذلك بوضوح.
+- فرّق بين:
+  أ) المصطلح الذي استخدمه السائل
+  ب) التوصيف القانوني الصحيح
+- إذا لم تكن المصادر كافية للجزم، فاذكر ذلك صراحة.
+- اعتمد أولًا على النصوص الرسمية، ثم الشروح والأبحاث والمنشورات المهنية كمصادر تفسيرية مساندة.
+
+أخرج النتيجة بصيغة JSON فقط، دون أي شرح خارج JSON، وبالشكل التالي تمامًا:
+
+{
+  "question_summary": "ملخص قصير للسؤال",
+  "legal_elements": {
+    "contract_type": "",
+    "issue_type": "",
+    "parties": "",
+    "duration_or_time_factor": "",
+    "key_terms_used_by_user": []
+  },
+  "term_validation": {
+    "is_user_terminology_precise": true,
+    "problematic_terms": [],
+    "reasoning": ""
+  },
+  "premise_check": {
+    "has_premise_problem": true,
+    "premise_problem_explanation": ""
+  },
+  "correct_legal_characterization": {
+    "summary": "",
+    "applicable_if_any": [],
+    "not_applicable_if_any": []
+  },
+  "guidance_for_final_answer": {
+    "must_correct_user_term_first": true,
+    "must_warn_about_mischaracterization": true,
+    "must_distinguish_between_official_rule_and_interpretation": true
+  }
+}
+
+مهم جدًا:
+- أعد JSON صالحًا فقط.
+- لا تضف markdown.
+- لا تكتب ثلاث علامات backticks.
+`;
+}
+
+/* ====== تنظيف JSON المحتمل من OpenAI ====== */
+function safeParseJSON(text) {
+  const cleaned = (text || "")
+    .trim()
+    .replace(/^```json/i, "")
+    .replace(/^```/, "")
+    .replace(/```$/, "")
+    .trim();
+
+  return JSON.parse(cleaned);
+}
+
+/* ====== برومبت الجواب النهائي ====== */
+function buildFinalAnswerPrompt(query, sourcesText, issueAnalysis) {
+  return `
+السؤال الأصلي من المستخدم:
+${query}
+
+نتيجة الفحص القانوني الأولي للسؤال:
+${JSON.stringify(issueAnalysis, null, 2)}
+
+المصادر القانونية التي تم جمعها:
+${sourcesText}
+
+أنت باحث قانوني سعودي متخصص.
+
+مهمتك الآن: كتابة الجواب النهائي، ولكن بناءً على الفحص الأولي أعلاه، لا بناءً على ظاهر ألفاظ المستخدم فقط.
+
+قواعد إلزامية:
+- ابدأ أولًا بفحص ما إذا كان السؤال يتضمن توصيفًا قانونيًا غير دقيق.
+- إذا كان في السؤال مصطلح غير منطبق أو فرضية خاطئة، فنبه إلى ذلك بوضوح ثم صحح التوصيف قبل الجواب.
+- لا تطبق أي مادة أو حكم فقط لأن لفظه ورد في السؤال.
+- العبرة بالتكييف الصحيح للواقعة بحسب نوع العقد والوقائع المذكورة والشروط النظامية.
+- إذا وُجد فرق بين التسمية الشائعة والوصف القانوني الصحيح، فاذكر الفرق.
+- اعتمد أولًا على النصوص النظامية الرسمية.
+- يمكن الاستفادة من المقالات والأبحاث والمنشورات المهنية كمصادر تفسيرية، لكن لا تجعلها مقدمة على النص النظامي عند التعارض.
+- إذا كانت النتيجة ترجيحية أو تحتاج إلى مزيد من الوقائع، فاذكر ذلك بوضوح.
+- اكتب بالعربية.
+- اجعل الجواب بصيغة HTML فقط.
+- لا تضع <html> ولا <body>.
+- لا تذكر تحليلات داخلية أو JSON في الجواب النهائي.
+
+استخدم الترتيب التالي:
+
+<h2>عنوان الموضوع</h2>
+
+<h3>فحص توصيف السؤال</h3>
+<p>...</p>
+
+<h3>التكييف القانوني الصحيح</h3>
+<p>...</p>
+
+<h3>الأساس النظامي</h3>
+<p>...</p>
+
+<h3>التحليل القانوني</h3>
+<ul>
+<li>...</li>
+</ul>
+
+<h3>الخلاصة</h3>
+<p>...</p>
+
+<h3>المراجع</h3>
+<ul>
+<li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a></li>
+</ul>
+
+تعليمات إضافية:
+- إذا كان السؤال سليمًا من جهة التوصيف، فاذكر ذلك بإيجاز.
+- إذا كان السؤال غير سليم من جهة التوصيف، فابدأ بتصحيحه ثم واصل الإجابة.
+- يفضل وضع إشارة داخل الفقرات من مثل: (استنادًا إلى النص النظامي)، أو (بحسب مصدر تفسيري مساند).
+- لا تُسقط الحكم على وصف غير منطبق.
+`;
+}
+
 /* ====== الخادم ====== */
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -174,90 +370,71 @@ export default async function handler(req, res) {
       });
     }
 
-    let sourcesText = "";
+    const extractedTextsMap = new Map();
 
     for (const r of allResults) {
       const pageText = await extractText(r.url);
-
-      sourcesText += `
-العنوان: ${r.title}
-الرابط: ${r.url}
-الملخص: ${r.snippet}
-النص:
-${pageText || "لم يمكن استخراج نص كافٍ."}
-
----------------------
-`;
+      extractedTextsMap.set(r.url, pageText);
     }
 
-    const prompt = `
-السؤال:
-${query}
+    const sourcesText = buildSourcesText(allResults, extractedTextsMap);
 
-المصادر القانونية التي تم جمعها:
-${sourcesText}
+    /* ====== المرحلة الأولى: فحص السؤال وتوصيفه ====== */
+    const issueSpotterPrompt = buildIssueSpotterPrompt(query, sourcesText);
 
-أنت باحث قانوني سعودي متخصص.
+    let issueAnalysis = null;
 
-التعليمات:
-- اعتمد أولًا على النصوص النظامية الرسمية.
-- ثم المقالات القانونية للمحامين السعوديين.
-- ثم الأبحاث والدراسات.
-- اعتمد الأحدث فالأحدث متى أمكن.
-- اكتب الإجابة بالعربية.
-- اجعل الإجابة بصيغة HTML.
-- استخدم الترتيب التالي:
-
-<h2>عنوان الموضوع</h2>
-
-<h3>الأساس النظامي</h3>
-<p>...</p>
-
-<h3>التحليل القانوني</h3>
-<ul>
-<li>...</li>
-</ul>
-
-<h3>الخلاصة</h3>
-<p>...</p>
-
-<h3>المراجع</h3>
-<ul>
-<li><a href="..." target="_blank" rel="noopener noreferrer">اسم المصدر</a></li>
-</ul>
-
-- يفضل وضع مصدر بعد كل فقرة إن أمكن.
-`;
-
-    const openaiResp = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
+    try {
+      const issueSpotterData = await callOpenAI({
         model: "gpt-4.1",
-        input: prompt,
-        max_output_tokens: 2500
-      })
+        input: issueSpotterPrompt,
+        max_output_tokens: 1800
+      });
+
+      const issueSpotterText = extractOpenAIText(issueSpotterData);
+      issueAnalysis = safeParseJSON(issueSpotterText);
+    } catch {
+      issueAnalysis = {
+        question_summary: query,
+        legal_elements: {
+          contract_type: "",
+          issue_type: "",
+          parties: "",
+          duration_or_time_factor: "",
+          key_terms_used_by_user: []
+        },
+        term_validation: {
+          is_user_terminology_precise: true,
+          problematic_terms: [],
+          reasoning: "تعذر إجراء فحص بنيوي كامل للسؤال في هذه المحاولة."
+        },
+        premise_check: {
+          has_premise_problem: false,
+          premise_problem_explanation: ""
+        },
+        correct_legal_characterization: {
+          summary: "",
+          applicable_if_any: [],
+          not_applicable_if_any: []
+        },
+        guidance_for_final_answer: {
+          must_correct_user_term_first: false,
+          must_warn_about_mischaracterization: false,
+          must_distinguish_between_official_rule_and_interpretation: true
+        }
+      };
+    }
+
+    /* ====== المرحلة الثانية: الجواب النهائي بناءً على الفحص ====== */
+    const finalPrompt = buildFinalAnswerPrompt(query, sourcesText, issueAnalysis);
+
+    const finalData = await callOpenAI({
+      model: "gpt-4.1",
+      input: finalPrompt,
+      max_output_tokens: 2600
     });
 
-    const raw = await openaiResp.text();
-
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      return res.status(500).json({ error: raw });
-    }
-
-    if (!openaiResp.ok) {
-      return res.status(500).json({
-        error: data?.error?.message || "خطأ في OpenAI"
-      });
-    }
-
-    const content = extractOpenAIText(data) || "<p>لم يتم استخراج جواب.</p>";
+    const content = extractOpenAIText(finalData) || "<p>لم يتم استخراج جواب.</p>";
 
     return res.status(200).json({
       content,
