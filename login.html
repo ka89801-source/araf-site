@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>أعراف | تسجيل الدخول</title>
+  <link rel="icon" href="logo.jpg" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ═══════════════════════════════════════
+       أعراف — صفحة تسجيل الدخول
+       تصميم فاخر مستوحى من الهوية الذهبية
+       ═══════════════════════════════════════ */
+
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+    }
+
+    :root {
+      --gold-100: #FFF8E7;
+      --gold-200: #F5E6B8;
+      --gold-300: #E8C96D;
+      --gold-400: #D4A843;
+      --gold-500: #C8963E;
+      --gold-600: #A67C2E;
+      --cream: #FFFDF5;
+      --dark-900: #1A1207;
+      --dark-800: #2C1F0E;
+      --dark-700: #3D2E18;
+      --dark-600: #5A4528;
+      --text-primary: #2C1F0E;
+      --text-secondary: #6B5D4F;
+      --text-light: #9B8E7E;
+      --error: #C44B3F;
+      --error-bg: #FFF0EE;
+      --success: #2D7A4F;
+      --success-bg: #F0FFF5;
+      --border: #E8DCC8;
+      --shadow-sm: 0 1px 3px rgba(42,30,10,0.06);
+      --shadow-md: 0 4px 16px rgba(42,30,10,0.08);
+      --shadow-lg: 0 8px 32px rgba(42,30,10,0.12);
+      --shadow-gold: 0 4px 20px rgba(200,150,62,0.15);
+    }
+
+    body {
+      font-family: 'IBM Plex Sans Arabic', 'Noto Kufi Arabic', sans-serif;
+      background: var(--cream);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: var(--text-primary);
+      overflow-x: hidden;
+    }
+
+    /* ─── خلفية مزخرفة ─── */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background:
+        radial-gradient(ellipse at 20% 0%, rgba(212,168,67,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 100%, rgba(200,150,62,0.06) 0%, transparent 60%),
+        radial-gradient(circle at 50% 50%, rgba(245,230,184,0.3) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── نمط هندسي ─── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image:
+        linear-gradient(rgba(212,168,67,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(212,168,67,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ═══════ التخطيط الرئيسي ═══════ */
+    .page-wrapper {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ═══════ الشعار ═══════ */
+    .logo-section {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      animation: fadeDown 0.8s ease-out;
+    }
+
+    .logo-container {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.2rem;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: var(--shadow-gold);
+      border: 2px solid var(--gold-200);
+      transition: transform 0.3s ease;
+    }
+
+    .logo-container:hover {
+      transform: scale(1.05);
+    }
+
+    .logo-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brand-name {
+      font-family: 'Noto Kufi Arabic', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--gold-400), var(--gold-600));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-tagline {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-top: 0.3rem;
+      font-weight: 400;
+    }
+
+    /* ═══════ كارت تسجيل الدخول ═══════ */
+    .auth-card {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 2.5rem 2.2rem;
+      box-shadow: var(--shadow-lg);
+      animation: fadeUp 0.8s ease-out 0.15s both;
+    }
+
+    /* ─── تبويبات ─── */
+    .tabs {
+      display: flex;
+      gap: 0;
+      background: var(--gold-100);
+      border-radius: 14px;
+      padding: 4px;
+      margin-bottom: 2rem;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: none;
+      background: transparent;
+      font-family: 'Noto Kufi Arabic', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 11px;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: var(--gold-600);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab-btn:not(.active):hover {
+      color: var(--text-primary);
+    }
+
+    /* ─── العنوان ─── */
+    .form-header {
+      text-align: center;
+      margin-bottom: 1.8rem;
+    }
+
+    .form-header h2 {
+      font-family: 'Noto Kufi Arabic', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.4rem;
+    }
+
+    .form-header p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    /* ─── الحقول ─── */
+    .form-group {
+      margin-bottom: 1.3rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .input-wrapper .icon {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      color: var(--text-light);
+      pointer-events: none;
+      transition: color 0.3s;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.85rem 1rem 0.85rem 2.8rem;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      font-family: 'IBM Plex Sans Arabic', sans-serif;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      background: white;
+      transition: all 0.3s ease;
+      outline: none;
+      direction: ltr;
+      text-align: right;
+    }
+
+    .form-input::placeholder {
+      color: var(--text-light);
+      font-size: 0.85rem;
+    }
+
+    .form-input:focus {
+      border-color: var(--gold-400);
+      box-shadow: 0 0 0 3px rgba(212,168,67,0.12);
+    }
+
+    .form-input:focus + .icon,
+    .form-input:focus ~ .icon {
+      color: var(--gold-500);
+    }
+
+    .form-input.error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(196,75,63,0.08);
+    }
+
+    /* ─── إظهار كلمة المرور ─── */
+    .toggle-password {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-light);
+      padding: 4px;
+      display: flex;
+      transition: color 0.3s;
+    }
+
+    .toggle-password:hover {
+      color: var(--gold-500);
+    }
+
+    .toggle-password svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* ─── حقل الاسم ─── */
+    .name-input {
+      direction: rtl;
+      text-align: right;
+    }
+
+    /* ─── رسائل الخطأ ─── */
+    .field-error {
+      font-size: 0.78rem;
+      color: var(--error);
+      margin-top: 0.35rem;
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .field-error.visible {
+      display: flex;
+    }
+
+    /* ─── الرسائل العامة ─── */
+    .message-box {
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      margin-bottom: 1.2rem;
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      animation: fadeUp 0.3s ease-out;
+    }
+
+    .message-box.error {
+      display: flex;
+      background: var(--error-bg);
+      color: var(--error);
+      border: 1px solid rgba(196,75,63,0.15);
+    }
+
+    .message-box.success {
+      display: flex;
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(45,122,79,0.15);
+    }
+
+    /* ─── الزر الرئيسي ─── */
+    .submit-btn {
+      width: 100%;
+      padding: 0.95rem;
+      border: none;
+      border-radius: 14px;
+      font-family: 'Noto Kufi Arabic', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(135deg, var(--gold-400), var(--gold-600));
+      cursor: pointer;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: var(--shadow-gold);
+      margin-top: 0.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .submit-btn::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%; right: 0; bottom: 0;
+      width: 300%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      transition: left 0.5s;
+    }
+
+    .submit-btn:hover::before {
+      left: 100%;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(200,150,62,0.25);
+    }
+
+    .submit-btn:active {
+      transform: translateY(0);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ─── مؤشر التحميل ─── */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+
+    /* ─── الفوتر ─── */
+    .footer {
+      text-align: center;
+      margin-top: 2rem;
+      animation: fadeUp 0.8s ease-out 0.3s both;
+    }
+
+    .footer p {
+      font-size: 0.78rem;
+      color: var(--text-light);
+    }
+
+    .footer-brand {
+      color: var(--gold-500);
+      font-weight: 600;
+    }
+
+    /* ─── زخرفة جانبية ─── */
+    .deco-line {
+      position: fixed;
+      width: 3px;
+      height: 120px;
+      background: linear-gradient(to bottom, transparent, var(--gold-300), transparent);
+      border-radius: 3px;
+      opacity: 0.3;
+    }
+
+    .deco-line.right {
+      left: 40px;
+      top: 30%;
+    }
+
+    .deco-line.left {
+      right: 40px;
+      bottom: 25%;
+    }
+
+    /* ═══════ Animations ═══════ */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ═══════ Responsive ═══════ */
+    @media (max-width: 480px) {
+      .auth-card {
+        padding: 2rem 1.5rem;
+        border-radius: 20px;
+      }
+
+      .brand-name { font-size: 1.7rem; }
+
+      .logo-container {
+        width: 65px;
+        height: 65px;
+      }
+
+      .deco-line { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- زخارف جانبية -->
+  <div class="deco-line right"></div>
+  <div class="deco-line left"></div>
+
+  <div class="page-wrapper">
+    <!-- الشعار -->
+    <div class="logo-section">
+      <div class="logo-container">
+        <img src="logo.jpg" alt="أعراف" />
+      </div>
+      <div class="brand-name">أعراف</div>
+      <div class="brand-tagline">المساعد القانوني الذكي</div>
+    </div>
+
+    <!-- كارت تسجيل الدخول -->
+    <div class="auth-card">
+      <!-- التبويبات -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="login" id="tabLogin">تسجيل الدخول</button>
+        <button class="tab-btn" data-tab="signup" id="tabSignup">حساب جديد</button>
+      </div>
+
+      <!-- رسالة عامة -->
+      <div id="messageBox" class="message-box"></div>
+
+      <!-- ═══ فورم تسجيل الدخول ═══ -->
+      <div id="loginForm">
+        <div class="form-header">
+          <h2>أهلاً بك في أعراف</h2>
+          <p>سجّل دخولك للوصول إلى مساعدك القانوني الذكي</p>
+        </div>
+
+        <div class="form-group">
+          <label for="loginEmail">البريد الإلكتروني</label>
+          <div class="input-wrapper">
+            <input type="email" id="loginEmail" class="form-input" placeholder="example@email.com" autocomplete="email" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          </div>
+          <div class="field-error" id="loginEmailError">يرجى إدخال بريد إلكتروني صحيح</div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">كلمة المرور</label>
+          <div class="input-wrapper">
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" autocomplete="current-password" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <button type="button" class="toggle-password" id="toggleLoginPass">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <button class="submit-btn" id="loginBtn">تسجيل الدخول</button>
+      </div>
+
+      <!-- ═══ فورم إنشاء حساب ═══ -->
+      <div id="signupForm" style="display:none;">
+        <div class="form-header">
+          <h2>إنشاء حساب جديد</h2>
+          <p>أنشئ حسابك للبدء في استخدام المنصة</p>
+        </div>
+
+        <div class="form-group">
+          <label for="signupName">الاسم الكامل</label>
+          <div class="input-wrapper">
+            <input type="text" id="signupName" class="form-input name-input" placeholder="أدخل اسمك" autocomplete="name" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div class="field-error" id="signupNameError">يرجى إدخال الاسم</div>
+        </div>
+
+        <div class="form-group">
+          <label for="signupEmail">البريد الإلكتروني</label>
+          <div class="input-wrapper">
+            <input type="email" id="signupEmail" class="form-input" placeholder="example@email.com" autocomplete="email" />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          </div>
+          <div class="field-error" id="signupEmailError">يرجى إدخال بريد إلكتروني صحيح</div>
+        </div>
+
+        <div class="form-group">
+  <label for="loginPassword">كلمة المرور</label>
+  <div class="input-wrapper">
+    <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" autocomplete="current-password" />
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <button type="button" class="toggle-password" id="toggleLoginPass">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </div>
+  <div class="field-error" id="loginPasswordError">يرجى إدخال كلمة المرور</div>
+</div>
+        
+          <div class="field-error" id="signupPasswordError">كلمة المرور يجب أن تكون 6 أحرف على الأقل</div>
+        </div>
+
+        <button class="submit-btn" id="signupBtn">إنشاء الحساب</button>
+      </div>
+    </div>
+
+    <!-- الفوتر -->
+    <div class="footer">
+      <p>شركة <span class="footer-brand">أعراف</span> للمحاماة والاستشارات القانونية &copy; 2026</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       Supabase SDK + Auth Logic
+       ═══════════════════════════════════════ -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+      /* ══════ إعدادات Supabase ══════ */
+      const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+      const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+      const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      /* ══════ التحقق عند فتح الصفحة ══════ */
+      (async function checkSession() {
+        try {
+          const { data: { session } } = await sb.auth.getSession();
+          if (session) window.location.href = 'index.html';
+        } catch (e) {}
+      })();
+
+      /* ══════ العناصر ══════ */
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+      const loginBtn = document.getElementById('loginBtn');
+      const signupBtn = document.getElementById('signupBtn');
+      const toggleLoginPass = document.getElementById('toggleLoginPass');
+      const toggleSignupPass = document.getElementById('toggleSignupPass');
+      const messageBox = document.getElementById('messageBox');
+
+      /* ══════ تبديل التبويبات ══════ */
+      function switchTab(tab) {
+        tabLogin.classList.toggle('active', tab === 'login');
+        tabSignup.classList.toggle('active', tab === 'signup');
+        loginForm.style.display = tab === 'login' ? 'block' : 'none';
+        signupForm.style.display = tab === 'signup' ? 'block' : 'none';
+        hideMessage();
+        clearErrors();
+      }
+
+      tabLogin.addEventListener('click', function () { switchTab('login'); });
+      tabSignup.addEventListener('click', function () { switchTab('signup'); });
+
+      /* ══════ إظهار/إخفاء كلمة المرور ══════ */
+      var eyeOpen = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var eyeClosed = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+      function togglePassword(inputId, btn) {
+        var input = document.getElementById(inputId);
+        var isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        btn.innerHTML = isPassword ? eyeClosed : eyeOpen;
+      }
+
+      toggleLoginPass.addEventListener('click', function () {
+        togglePassword('loginPassword', toggleLoginPass);
+      });
+      toggleSignupPass.addEventListener('click', function () {
+        togglePassword('signupPassword', toggleSignupPass);
+      });
+
+      /* ══════ الرسائل ══════ */
+      function showMessage(text, type) {
+        messageBox.className = 'message-box ' + type;
+        var icon = type === 'error'
+          ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+          : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
+        messageBox.innerHTML = icon + text;
+      }
+
+      function hideMessage() {
+        messageBox.className = 'message-box';
+        messageBox.innerHTML = '';
+      }
+
+      function clearErrors() {
+        document.querySelectorAll('.field-error').forEach(function (e) { e.classList.remove('visible'); });
+        document.querySelectorAll('.form-input').forEach(function (e) { e.classList.remove('error'); });
+      }
+
+      function showFieldError(inputId, errorId) {
+        document.getElementById(inputId).classList.add('error');
+        document.getElementById(errorId).classList.add('visible');
+      }
+
+      function isValidEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      }
+
+      function setLoading(btn, loading, originalText) {
+        if (loading) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span> جارٍ التحميل...';
+        } else {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      }
+
+      /* ══════ تسجيل الدخول ══════ */
+      async function handleLogin() {
+        clearErrors();
+        hideMessage();
+
+        var email = document.getElementById('loginEmail').value.trim();
+        var password = document.getElementById('loginPassword').value;
+        var hasError = false;
+
+        if (!email || !isValidEmail(email)) {
+          showFieldError('loginEmail', 'loginEmailError');
+          hasError = true;
+        }
+        if (!password) {
+          showFieldError('loginPassword', 'loginPasswordError');
+          hasError = true;
+        }
+        if (hasError) return;
+
+        setLoading(loginBtn, true);
+
+        try {
+          var result = await sb.auth.signInWithPassword({ email: email, password: password });
+
+          if (result.error) {
+            var msg = result.error.message === 'Invalid login credentials'
+              ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+              : result.error.message === 'Email not confirmed'
+              ? 'يرجى تأكيد البريد الإلكتروني أولاً'
+              : 'حدث خطأ أثناء تسجيل الدخول';
+            showMessage(msg, 'error');
+          } else {
+            showMessage('تم تسجيل الدخول بنجاح!', 'success');
+            setTimeout(function () { window.location.href = 'index.html'; }, 800);
+          }
+        } catch (e) {
+          showMessage('خطأ في الاتصال. تأكد من اتصالك بالإنترنت.', 'error');
+        }
+
+        setLoading(loginBtn, false, 'تسجيل الدخول');
+      }
+
+      /* ══════ إنشاء حساب جديد ══════ */
+      async function handleSignup() {
+        clearErrors();
+        hideMessage();
+
+        var name = document.getElementById('signupName').value.trim();
+        var email = document.getElementById('signupEmail').value.trim();
+        var password = document.getElementById('signupPassword').value;
+        var hasError = false;
+
+        if (!name) {
+          showFieldError('signupName', 'signupNameError');
+          hasError = true;
+        }
+        if (!email || !isValidEmail(email)) {
+          showFieldError('signupEmail', 'signupEmailError');
+          hasError = true;
+        }
+        if (!password || password.length < 6) {
+          showFieldError('signupPassword', 'signupPasswordError');
+          hasError = true;
+        }
+        if (hasError) return;
+
+        setLoading(signupBtn, true);
+
+        try {
+          var result = await sb.auth.signUp({
+            email: email,
+            password: password,
+            options: { data: { full_name: name } }
+          });
+
+          if (result.error) {
+            var msg = result.error.message.includes('already registered')
+              ? 'هذا البريد مسجّل مسبقاً. جرّب تسجيل الدخول.'
+              : 'حدث خطأ أثناء إنشاء الحساب';
+            showMessage(msg, 'error');
+          } else {
+            showMessage('تم إنشاء الحساب! تحقق من بريدك الإلكتروني لتأكيد الحساب.', 'success');
+          }
+        } catch (e) {
+          showMessage('خطأ في الاتصال. تأكد من اتصالك بالإنترنت.', 'error');
+        }
+
+        setLoading(signupBtn, false, 'إنشاء الحساب');
+      }
+
+      /* ══════ أزرار الإرسال ══════ */
+      loginBtn.addEventListener('click', handleLogin);
+      signupBtn.addEventListener('click', handleSignup);
+
+      /* ══════ Enter للإرسال ══════ */
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        if (loginForm.style.display !== 'none') handleLogin();
+        else handleSignup();
+      });
+
+    }); /* نهاية DOMContentLoaded */
+  </script>
+</body>
+</html>
